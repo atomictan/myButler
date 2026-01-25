@@ -8,17 +8,31 @@
 import SwiftUI
 
 struct ContentView: View {
+    // Shared store injected from the App entry point.
+    @ObservedObject var store: ItemStore
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        TabView {
+            // Inbox is the primary capture list.
+            InboxView(store: store)
+                .tabItem {
+                    Label("Inbox", systemImage: "tray")
+                }
+
+            // Placeholder tabs for upcoming milestones.
+            TodayView()
+                .tabItem {
+                    Label("Today", systemImage: "sun.max")
+                }
+
+            SearchView()
+                .tabItem {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
         }
-        .padding()
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView(store: ItemStore())
 }

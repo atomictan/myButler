@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct myButlerApp: App {
+    // Single source of truth for items.
+    @StateObject private var store = ItemStore()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            // Inject the store into the root view.
+            ContentView(store: store)
         }
     }
 }
