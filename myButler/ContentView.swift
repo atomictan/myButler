@@ -25,7 +25,8 @@ struct ContentView: View {
                     Label("Today", systemImage: "sun.max")
                 }
 
-            SearchView()
+            // Search needs access to the shared item store.
+            SearchView(store: store)
                 .tabItem {
                     Label("Search", systemImage: "magnifyingglass")
                 }

@@ -12,22 +12,27 @@ struct InboxView: View {
                     ContentUnavailableView("No items yet", systemImage: "tray")
                 } else {
                     List(store.items) { item in
-                        VStack(alignment: .leading, spacing: 4) {
-                            // Main title shown in the list.
-                            Text(item.title)
-                                .font(.headline)
-                            if !item.details.isEmpty {
-                                // Secondary description if provided.
-                                Text(item.details)
-                                    .font(.subheadline)
+                        // Each row links to the item detail screen.
+                        NavigationLink {
+                            ItemDetailView(item: item)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                // Main title shown in the list.
+                                Text(item.title)
+                                    .font(.headline)
+                                if !item.details.isEmpty {
+                                    // Secondary description if provided.
+                                    Text(item.details)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                // Type label for quick scanning.
+                                Text(item.type.rawValue.capitalized)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            // Type label for quick scanning.
-                            Text(item.type.rawValue.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
             }
