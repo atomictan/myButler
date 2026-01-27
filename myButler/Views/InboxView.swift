@@ -3,6 +3,7 @@ import SwiftUI
 struct InboxView: View {
     @ObservedObject var store: ItemStore
     @State private var isShowingAdd = false
+    @State private var isShowingVoiceCapture = false
 
     var body: some View {
         NavigationStack {
@@ -46,10 +47,22 @@ struct InboxView: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        // Opens the voice capture sheet.
+                        isShowingVoiceCapture = true
+                    } label: {
+                        Image(systemName: "mic.fill")
+                    }
+                }
             }
             // Presents the add form.
             .sheet(isPresented: $isShowingAdd) {
                 AddItemView(store: store)
+            }
+            // Presents the voice capture flow.
+            .sheet(isPresented: $isShowingVoiceCapture) {
+                VoiceCaptureView(store: store)
             }
         }
     }
