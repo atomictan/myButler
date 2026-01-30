@@ -16,9 +16,36 @@ final class ItemStore: ObservableObject {
     }
 
     // Adds a new item and persists it.
-    func addItem(type: ItemType, title: String, details: String, rawText: String? = nil) {
-        let item = Item(type: type, title: title, details: details, rawText: rawText)
+    func addItem(
+        type: ItemType,
+        title: String,
+        details: String,
+        rawText: String? = nil,
+        priority: ItemPriority = .normal,
+        dueDate: Date? = nil,
+        tags: [String] = []
+    ) {
+        let item = Item(
+            type: type,
+            title: title,
+            details: details,
+            rawText: rawText,
+            priority: priority,
+            dueDate: dueDate,
+            tags: tags
+        )
         items.insert(item, at: 0)
+        save()
+    }
+
+    func updateItem(id: UUID, update: (inout Item) -> Void) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        var item = items[index]
+        update(&item)
+        items[index] = item
         save()
     }
 

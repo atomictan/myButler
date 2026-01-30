@@ -6,6 +6,11 @@ struct VoiceCaptureView: View {
     @ObservedObject var store: ItemStore
     // Voice capture service that manages permissions + transcription.
     @StateObject private var captureService = VoiceCaptureService()
+    @State private var isStructuring = false
+    @State private var proposedDraft: StructuredDraft?
+    @State private var proposedRawText = ""
+    @State private var structuringError: String?
+    @State private var isShowingProposedStructure = false
 
     var body: some View {
         NavigationStack {
@@ -28,16 +33,39 @@ struct VoiceCaptureView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         // Save the transcript as a new inbox item.
-                        saveTranscript()
-                        dismiss()
+                        startStructuring()
                     }
-                    .disabled(captureService.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSaveDisabled || isStructuring)
                 }
             }
             .task {
                 // Ensure permissions are requested when the view appears.
                 await captureService.requestPermissions()
             }
+        }
+        .overlay {
+            if isStructuring {
+                ProgressView("Structuring...")
+            }
+        }
+        .sheet(isPresented: $isShowingProposedStructure) {
+            if let proposedDraft {
+                ProposedStructureView(
+                    draft: proposedDraft,
+                    rawText: proposedRawText,
+                    store: store
+                ) {
+                    dismiss()
+                }
+            }
+        }
+        .alert("Structuring Failed", isPresented: Binding(
+            get: { structuringError != nil },
+            set: { _ in structuringError = nil }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(structuringError ?? "Unknown error")
         }
     }
 
@@ -72,6 +100,7 @@ struct VoiceCaptureView: View {
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
+
 
     // Main record/stop button based on current state.
     private var recordButton: some View {
@@ -128,13 +157,44 @@ struct VoiceCaptureView: View {
         }
     }
 
-    // Saves the transcript into the item store.
-    private func saveTranscript() {
+    private var isSaveDisabled: Bool {
+        captureService.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func startStructuring() {
         let trimmedTranscript = captureService.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTranscript.isEmpty else { return }
 
-        let title = String(trimmedTranscript.prefix(40))
-        store.addItem(type: .note, title: title, details: trimmedTranscript, rawText: trimmedTranscript)
+        isStructuring = true
+        structuringError = nil
+        proposedRawText = trimmedTranscript
+
+        Task {
+            do {
+                let service = StructuringService()
+                var draft = try await service.structure(text: trimmedTranscript)
+                draft = StructuringParser.validate(draft)
+
+                await MainActor.run {
+                    proposedDraft = draft
+                    isShowingProposedStructure = true
+                    isStructuring = false
+                }
+            } catch {
+                let message: String
+                if case StructuringError.unavailable(let name) = error {
+                    message = "\(name)."
+                } else if case StructuringError.invalidResponse(let details) = error {
+                    message = details
+                } else {
+                    message = error.localizedDescription
+                }
+                await MainActor.run {
+                    structuringError = message
+                    isStructuring = false
+                }
+            }
+        }
     }
 }
 

@@ -8,6 +8,15 @@ struct AddItemView: View {
     @State private var title = ""
     @State private var details = ""
     @State private var type: ItemType = .note
+    @State private var priority: ItemPriority = .normal
+    @State private var hasDueDate = false
+    @State private var dueDate = Date()
+    @State private var tagsText = ""
+    @State private var isStructuring = false
+    @State private var proposedDraft: StructuredDraft?
+    @State private var proposedRawText = ""
+    @State private var structuringError: String?
+    @State private var isShowingProposedStructure = false
 
     var body: some View {
         NavigationStack {
@@ -33,6 +42,21 @@ struct AddItemView: View {
                     TextEditor(text: $details)
                         .frame(minHeight: 120)
                 }
+
+                Section("Metadata") {
+                    Picker("Priority", selection: $priority) {
+                        ForEach(ItemPriority.allCases) { itemPriority in
+                            Text(itemPriority.label)
+                                .tag(itemPriority)
+                        }
+                    }
+                    Toggle("Has due date", isOn: $hasDueDate)
+                    if hasDueDate {
+                        DatePicker("Due date", selection: $dueDate, displayedComponents: .date)
+                    }
+                    TextField("Tags (comma separated)", text: $tagsText)
+                }
+
             }
             .navigationTitle("New Item")
             .toolbar {
@@ -45,38 +69,106 @@ struct AddItemView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         // Persist the new item and close.
-                        saveItem()
-                        dismiss()
+                        startStructuring()
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                              && details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSaveDisabled || isStructuring)
+                }
+            }
+        }
+        .overlay {
+            if isStructuring {
+                ProgressView("Structuring...")
+            }
+        }
+        .sheet(isPresented: $isShowingProposedStructure) {
+            if let proposedDraft {
+                ProposedStructureView(
+                    draft: proposedDraft,
+                    rawText: proposedRawText,
+                    store: store
+                ) {
+                    dismiss()
+                }
+            }
+        }
+        .alert("Structuring Failed", isPresented: Binding(
+            get: { structuringError != nil },
+            set: { _ in structuringError = nil }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(structuringError ?? "Unknown error")
+        }
+    }
+
+    private var isSaveDisabled: Bool {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func startStructuring() {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawText = trimmedDetails.isEmpty ? trimmedTitle : trimmedDetails
+
+        guard !rawText.isEmpty else { return }
+
+        isStructuring = true
+        structuringError = nil
+        proposedRawText = rawText
+
+        Task {
+            do {
+                let service = StructuringService()
+                var draft = try await service.structure(text: rawText)
+                draft = StructuringParser.validate(draft)
+
+                if !trimmedTitle.isEmpty {
+                    draft.title = trimmedTitle
+                }
+                if !trimmedDetails.isEmpty {
+                    draft.details = trimmedDetails
+                }
+                if type != .note {
+                    draft.type = type
+                }
+                if priority != .normal {
+                    draft.priority = priority
+                }
+                if hasDueDate {
+                    draft.dueDate = dueDate
+                }
+                let tags = normalizedTags(from: tagsText)
+                if !tags.isEmpty {
+                    draft.tags = tags
+                }
+
+                await MainActor.run {
+                    proposedDraft = draft
+                    isShowingProposedStructure = true
+                    isStructuring = false
+                }
+            } catch {
+                let message: String
+                if case StructuringError.unavailable(let name) = error {
+                    message = "\(name)."
+                } else if case StructuringError.invalidResponse(let details) = error {
+                    message = details
+                } else {
+                    message = error.localizedDescription
+                }
+                await MainActor.run {
+                    structuringError = message
+                    isStructuring = false
                 }
             }
         }
     }
 
-    // Normalizes the inputs and creates a new item.
-    private func saveItem() {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedTitle: String
-
-        // Choose a sensible title if the user left it blank.
-        if !trimmedTitle.isEmpty {
-            resolvedTitle = trimmedTitle
-        } else if trimmedDetails.isEmpty {
-            resolvedTitle = "Untitled"
-        } else {
-            resolvedTitle = String(trimmedDetails.prefix(40))
-        }
-
-        store.addItem(
-            type: type,
-            title: resolvedTitle,
-            details: trimmedDetails,
-            // Raw text preserves the original input.
-            rawText: trimmedDetails.isEmpty ? trimmedTitle : trimmedDetails
-        )
+    private func normalizedTags(from text: String) -> [String] {
+        text.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 }
 

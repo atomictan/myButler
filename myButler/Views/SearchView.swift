@@ -31,7 +31,7 @@ struct SearchView: View {
                     List(filteredItems) { item in
                         // Navigate to the same item detail view.
                         NavigationLink {
-                            ItemDetailView(item: item)
+                            ItemDetailView(item: item, store: store)
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 // Title for the search result row.
@@ -47,6 +47,18 @@ struct SearchView: View {
                                 Text(item.type.rawValue.capitalized)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    Text(item.priority.label)
+                                    if let dueDate = item.dueDate {
+                                        Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                                    }
+                                    if !item.tags.isEmpty {
+                                        Text(item.tags.joined(separator: ", "))
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
                             .padding(.vertical, 4)
                         }
