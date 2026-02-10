@@ -40,6 +40,7 @@ struct Item: Identifiable, Codable {
     var priority: ItemPriority
     var dueDate: Date?
     var tags: [String]
+    var project: String?
 
     // Convenience initializer used by the Add screen.
     init(
@@ -51,7 +52,8 @@ struct Item: Identifiable, Codable {
         rawText: String? = nil,
         priority: ItemPriority = .normal,
         dueDate: Date? = nil,
-        tags: [String] = []
+        tags: [String] = [],
+        project: String? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -63,6 +65,7 @@ struct Item: Identifiable, Codable {
         self.priority = priority
         self.dueDate = dueDate
         self.tags = tags
+        self.project = project
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -75,6 +78,7 @@ struct Item: Identifiable, Codable {
         case priority
         case dueDate
         case tags
+        case project
     }
 
     init(from decoder: Decoder) throws {
@@ -88,6 +92,7 @@ struct Item: Identifiable, Codable {
         priority = try container.decodeIfPresent(ItemPriority.self, forKey: .priority) ?? .normal
         dueDate = try container.decodeIfPresent(Date.self, forKey: .dueDate)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        project = try container.decodeIfPresent(String.self, forKey: .project)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -101,5 +106,6 @@ struct Item: Identifiable, Codable {
         try container.encode(priority, forKey: .priority)
         try container.encodeIfPresent(dueDate, forKey: .dueDate)
         try container.encode(tags, forKey: .tags)
+        try container.encodeIfPresent(project, forKey: .project)
     }
 }

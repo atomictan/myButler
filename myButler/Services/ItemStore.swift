@@ -6,6 +6,11 @@ import Foundation
 final class ItemStore: ObservableObject {
     // Read-only outside this class to keep mutations controlled.
     @Published private(set) var items: [Item] = []
+    @Published private(set) var deletedHistory: [DeletedItem] = []
+
+    var latestDeleted: DeletedItem? {
+        deletedHistory.last
+    }
 
     // Location of the JSON file in the app's Documents folder.
     private let fileURL: URL
@@ -23,7 +28,8 @@ final class ItemStore: ObservableObject {
         rawText: String? = nil,
         priority: ItemPriority = .normal,
         dueDate: Date? = nil,
-        tags: [String] = []
+        tags: [String] = [],
+        project: String? = nil
     ) {
         let item = Item(
             type: type,
@@ -32,7 +38,8 @@ final class ItemStore: ObservableObject {
             rawText: rawText,
             priority: priority,
             dueDate: dueDate,
-            tags: tags
+            tags: tags,
+            project: project
         )
         items.insert(item, at: 0)
         save()
@@ -47,6 +54,44 @@ final class ItemStore: ObservableObject {
         update(&item)
         items[index] = item
         save()
+    }
+
+    func deleteItem(id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        let removedItem = items.remove(at: index)
+        deletedHistory.append(DeletedItem(item: removedItem, index: index, deletedAt: Date()))
+        if deletedHistory.count > 10 {
+            deletedHistory.removeFirst(deletedHistory.count - 10)
+        }
+        save()
+    }
+
+    func undoLastDelete() {
+        guard let lastDeleted = deletedHistory.popLast() else {
+            return
+        }
+
+        let insertionIndex = min(lastDeleted.index, items.count)
+        items.insert(lastDeleted.item, at: insertionIndex)
+        save()
+    }
+
+    func restoreDeletedItem(_ deletedItem: DeletedItem) {
+        guard let index = deletedHistory.firstIndex(where: { $0.id == deletedItem.id }) else {
+            return
+        }
+        deletedHistory.remove(at: index)
+
+        let insertionIndex = min(deletedItem.index, items.count)
+        items.insert(deletedItem.item, at: insertionIndex)
+        save()
+    }
+
+    func clearDeletedHistory() {
+        deletedHistory.removeAll()
     }
 
     // Loads existing items or seeds sample data on first run.
@@ -89,5 +134,15 @@ final class ItemStore: ObservableObject {
     private static func defaultFileURL() -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         return documents[0].appendingPathComponent("items.json")
+    }
+}
+
+struct DeletedItem: Identifiable {
+    let item: Item
+    let index: Int
+    let deletedAt: Date
+
+    var id: UUID {
+        item.id
     }
 }

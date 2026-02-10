@@ -23,9 +23,10 @@ struct StructuringPrompt {
         "details": { "type": "string" },
         "priority": { "type": "string", "enum": ["low", "normal", "high"] },
         "dueDate": { "type": ["string", "null"], "format": "date" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "project": { "type": ["string", "null"] }
       },
-      "required": ["type", "title", "details", "priority", "dueDate", "tags"],
+      "required": ["type", "title", "details", "priority", "dueDate", "tags", "project"],
       "additionalProperties": false
     }
     """
@@ -44,6 +45,7 @@ struct StructuringPrompt {
         - "dueDate" must be ISO-8601 date string (YYYY-MM-DD) or null if unknown.
         - "priority" defaults to "normal" if not mentioned.
         - "tags" should be concise single words (no # prefix).
+        - "project" should be a short name or null if unknown.
 
         Input:
         \(trimmedText)
@@ -74,7 +76,8 @@ struct StructuringParser {
             details: response.details,
             priority: response.itemPriority,
             dueDate: dueDate,
-            tags: response.tags
+            tags: response.tags,
+            project: response.project
         )
     }
 
@@ -95,13 +98,17 @@ struct StructuringParser {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
+        let project = draft.project?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedProject = (project?.isEmpty ?? true) ? nil : project
+
         return StructuredDraft(
             type: draft.type,
             title: resolvedTitle,
             details: trimmedDetails,
             priority: draft.priority,
             dueDate: draft.dueDate,
-            tags: tags
+            tags: tags,
+            project: resolvedProject
         )
     }
 }
@@ -113,6 +120,7 @@ private struct StructuredResponse: Decodable {
     let priority: String
     let dueDate: String?
     let tags: [String]
+    let project: String?
 
     var itemType: ItemType {
         ItemType(rawValue: type) ?? .note

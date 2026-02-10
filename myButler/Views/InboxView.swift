@@ -19,11 +19,47 @@ enum InboxSortOption: String, CaseIterable, Identifiable {
     }
 }
 
+enum InboxFilterOption: String, CaseIterable, Identifiable {
+    case all
+    case task
+    case idea
+    case note
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all:
+            return "All"
+        case .task:
+            return "Tasks"
+        case .idea:
+            return "Ideas"
+        case .note:
+            return "Notes"
+        }
+    }
+
+    var itemType: ItemType? {
+        switch self {
+        case .all:
+            return nil
+        case .task:
+            return .task
+        case .idea:
+            return .idea
+        case .note:
+            return .note
+        }
+    }
+}
+
 struct InboxView: View {
     @ObservedObject var store: ItemStore
     @State private var isShowingAdd = false
     @State private var isShowingVoiceCapture = false
     @State private var sortOption: InboxSortOption = .created
+    @State private var filterOption: InboxFilterOption = .all
 
     private var sortedItems: [Item] {
         switch sortOption {
@@ -48,6 +84,13 @@ struct InboxView: View {
         }
     }
 
+    private var filteredItems: [Item] {
+        guard let itemType = filterOption.itemType else {
+            return sortedItems
+        }
+        return sortedItems.filter { $0.type == itemType }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -55,40 +98,52 @@ struct InboxView: View {
                     // Empty-state placeholder when there are no items.
                     ContentUnavailableView("No items yet", systemImage: "tray")
                 } else {
-                    List(sortedItems) { item in
-                        // Each row links to the item detail screen.
-                        NavigationLink {
-                            ItemDetailView(item: item, store: store)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                // Main title shown in the list.
-                                Text(item.title)
-                                    .font(.headline)
-                                if !item.details.isEmpty {
-                                    // Secondary description if provided.
-                                    Text(item.details)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                    List {
+                        Section {
+                            Picker("Filter", selection: $filterOption) {
+                                ForEach(InboxFilterOption.allCases) { option in
+                                    Text(option.label)
+                                        .tag(option)
                                 }
-                                // Type label for quick scanning.
-                                Text(item.type.rawValue.capitalized)
+                            }
+                            .pickerStyle(.segmented)
+                        }
+
+                        ForEach(filteredItems) { item in
+                            NavigationLink {
+                                ItemDetailView(item: item, store: store)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.title)
+                                        .font(.headline)
+                                    if !item.details.isEmpty {
+                                        Text(item.details)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Text(item.type.rawValue.capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 8) {
+                                        Text(item.priority.label)
+                                        if let dueDate = item.dueDate {
+                                            Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                                        }
+                                        if let project = item.project, !project.isEmpty {
+                                            Text(project)
+                                        }
+                                        if !item.tags.isEmpty {
+                                            Text(item.tags.joined(separator: ", "))
+                                                .lineLimit(1)
+                                        }
+                                    }
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                HStack(spacing: 8) {
-                                    Text(item.priority.label)
-                                    if let dueDate = item.dueDate {
-                                        Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
-                                    }
-                                    if !item.tags.isEmpty {
-                                        Text(item.tags.joined(separator: ", "))
-                                            .lineLimit(1)
-                                    }
                                 }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 4)
                             }
-                            .padding(.vertical, 4)
                         }
+                        .onDelete(perform: deleteItems)
                     }
                 }
             }
@@ -131,6 +186,13 @@ struct InboxView: View {
             .sheet(isPresented: $isShowingVoiceCapture) {
                 VoiceCaptureView(store: store)
             }
+        }
+    }
+
+    private func deleteItems(at offsets: IndexSet) {
+        let itemsToDelete = offsets.map { filteredItems[$0] }
+        itemsToDelete.forEach { item in
+            store.deleteItem(id: item.id)
         }
     }
 }

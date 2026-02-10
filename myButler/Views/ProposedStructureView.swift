@@ -12,6 +12,7 @@ struct ProposedStructureView: View {
     @State private var priority: ItemPriority
     @State private var hasDueDate: Bool
     @State private var dueDate: Date
+    @State private var projectText: String
     @State private var tagsText: String
 
     init(draft: StructuredDraft, rawText: String, store: ItemStore, onComplete: @escaping () -> Void) {
@@ -24,6 +25,7 @@ struct ProposedStructureView: View {
         _priority = State(initialValue: draft.priority)
         _hasDueDate = State(initialValue: draft.dueDate != nil)
         _dueDate = State(initialValue: draft.dueDate ?? Date())
+        _projectText = State(initialValue: draft.project ?? "")
         _tagsText = State(initialValue: draft.tags.joined(separator: ", "))
     }
 
@@ -56,6 +58,7 @@ struct ProposedStructureView: View {
                     if hasDueDate {
                         DatePicker("Due date", selection: $dueDate, displayedComponents: .date)
                     }
+                    TextField("Project", text: $projectText)
                     TextField("Tags (comma separated)", text: $tagsText)
                 }
             }
@@ -101,7 +104,8 @@ struct ProposedStructureView: View {
             rawText: rawText,
             priority: priority,
             dueDate: hasDueDate ? dueDate : nil,
-            tags: normalizedTags(from: tagsText)
+            tags: normalizedTags(from: tagsText),
+            project: normalizedProject(from: projectText)
         )
         onComplete()
         dismiss()
@@ -111,6 +115,11 @@ struct ProposedStructureView: View {
         text.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    private func normalizedProject(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

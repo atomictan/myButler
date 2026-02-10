@@ -18,6 +18,8 @@ struct SearchView: View {
             item.title.lowercased().contains(loweredQuery)
                 || item.details.lowercased().contains(loweredQuery)
                 || item.rawText.lowercased().contains(loweredQuery)
+                || (item.project?.lowercased().contains(loweredQuery) ?? false)
+                || item.tags.contains { $0.lowercased().contains(loweredQuery) }
         }
     }
 
@@ -28,40 +30,42 @@ struct SearchView: View {
                     // Empty-state when no results match the query.
                     ContentUnavailableView("No results", systemImage: "magnifyingglass")
                 } else {
-                    List(filteredItems) { item in
-                        // Navigate to the same item detail view.
-                        NavigationLink {
-                            ItemDetailView(item: item, store: store)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                // Title for the search result row.
-                                Text(item.title)
-                                    .font(.headline)
-                                if !item.details.isEmpty {
-                                    // Short preview for the result row.
-                                    Text(item.details)
-                                        .font(.subheadline)
+                    List {
+                        ForEach(filteredItems) { item in
+                            NavigationLink {
+                                ItemDetailView(item: item, store: store)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.title)
+                                        .font(.headline)
+                                    if !item.details.isEmpty {
+                                        Text(item.details)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Text(item.type.rawValue.capitalized)
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
-                                }
-                                // Item type badge for quick scanning.
-                                Text(item.type.rawValue.capitalized)
+                                    HStack(spacing: 8) {
+                                        Text(item.priority.label)
+                                        if let dueDate = item.dueDate {
+                                            Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                                        }
+                                        if let project = item.project, !project.isEmpty {
+                                            Text(project)
+                                        }
+                                        if !item.tags.isEmpty {
+                                            Text(item.tags.joined(separator: ", "))
+                                                .lineLimit(1)
+                                        }
+                                    }
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                HStack(spacing: 8) {
-                                    Text(item.priority.label)
-                                    if let dueDate = item.dueDate {
-                                        Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
-                                    }
-                                    if !item.tags.isEmpty {
-                                        Text(item.tags.joined(separator: ", "))
-                                            .lineLimit(1)
-                                    }
                                 }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 4)
                             }
-                            .padding(.vertical, 4)
                         }
+                        .onDelete(perform: deleteItems)
                     }
                 }
             }
@@ -69,6 +73,13 @@ struct SearchView: View {
         }
         // Search bar that binds to the local query state.
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
+    }
+
+    private func deleteItems(at offsets: IndexSet) {
+        let itemsToDelete = offsets.map { filteredItems[$0] }
+        itemsToDelete.forEach { item in
+            store.deleteItem(id: item.id)
+        }
     }
 }
 
