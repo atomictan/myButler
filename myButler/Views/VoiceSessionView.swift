@@ -16,6 +16,14 @@ struct VoiceSessionView: View {
             VStack(spacing: 16) {
                 statusCard
                 transcriptCard
+                if viewModel.statusText == "Preparing Review" {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Preparing review...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Button(action: toggleSession) {
                     Label(viewModel.isActive ? "End" : "Start", systemImage: viewModel.isActive ? "stop.circle.fill" : "waveform.circle.fill")
                         .frame(maxWidth: .infinity)
@@ -31,6 +39,28 @@ struct VoiceSessionView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.errorMessage)
+            }
+            .alert("Review Error", isPresented: $viewModel.isShowingDiffError) {
+                Button("Retry") {
+                    viewModel.retryDiffProposal()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(viewModel.diffErrorMessage)
+            }
+            .sheet(isPresented: $viewModel.isShowingDiffReview) {
+                if let diff = viewModel.pendingDiff {
+                    VoiceSessionDiffReviewView(
+                        diff: diff,
+                        store: store,
+                        onApply: { selection in
+                            viewModel.applyDiff(diff, selection: selection)
+                        },
+                        onCancel: {
+                            viewModel.dismissDiffReview()
+                        }
+                    )
+                }
             }
         }
     }
@@ -71,6 +101,10 @@ struct VoiceSessionView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Button("Generate Proposed Diff") {
+                viewModel.retryDiffProposal()
+            }
+            .disabled(viewModel.isActive || !viewModel.canGenerateDiff)
             #endif
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -105,7 +139,25 @@ struct VoiceSessionView: View {
                 Text("Start a session to begin the conversation.")
                     .foregroundStyle(.secondary)
             } else {
-                Text(viewModel.transcript)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        Text(viewModel.transcript)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Color.clear
+                            .frame(height: 1)
+                            .id("transcriptBottom")
+                    }
+                    .frame(maxHeight: 220)
+                    .scrollIndicators(.visible)
+                    .onChange(of: viewModel.transcript) { _, _ in
+                        withAnimation {
+                            proxy.scrollTo("transcriptBottom", anchor: .bottom)
+                        }
+                    }
+                    .onAppear {
+                        proxy.scrollTo("transcriptBottom", anchor: .bottom)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,6 +173,7 @@ struct VoiceSessionView: View {
             viewModel.startSession()
         }
     }
+
 }
 
 #Preview {

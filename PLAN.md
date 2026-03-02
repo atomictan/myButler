@@ -1,5 +1,12 @@
 # Plan
 
+## Agent Startup Notes
+- Always read `PLAN.md`, `docs/voice-session.md`, and `issues_solutions.md` at session start.
+- Keep `PLAN.md` updated with top-level plan/status and non-voice-session milestones.
+- Keep `docs/voice-session.md` updated with detailed voice-session plan/status/implementation notes.
+- Keep `issues_solutions.md` updated each round with issues + solutions.
+    - Debug logs are saved in `~/Downloads` (files with the latest timestamp); user consents to reading those logs when requested, but tool approval may still be required by the sandbox.
+
 ## Guiding Principles (Stage 1)
 - Voice-first but always show text + structured output after each capture.
 - Start with one killer loop: Capture → Structure → Save → Retrieve.
@@ -85,26 +92,27 @@ One unified object with a type:
 ### M8 — Weekly digest (manual trigger) ✅
 - “Weekly brief” screen: top 3, waiting on, stale items
 
-### M9 — Voice Session (Realtime AI Conversation)
+### M9 — Voice Session (Realtime AI Conversation) ✅
 - Realtime streaming audio conversation with Doubao (start/end only, no extra UI taps).
-- Make model pluggable (support Doubao now, OpenAI later) via shared session provider interface.
-- On session start, send last 30 days of item context (title/type/project/tags/due).
-- Allow user to expand history via voice (“last 6 months”, “all history”); app refreshes context mid-session.
-- AI proposes create/update actions verbally; user confirms via voice (“confirm”, “reject”).
-- No automatic summaries; user prompts AI when needed.
-- On session end, save AI summary as a new note item titled “Discussion with Doubao YYYY-MM-DD HH:mm–HH:mm”.
-- Use voice-only confirmations for applying changes; minimal on-screen indicators allowed.
+- Pluggable provider interface (Doubao now, OpenAI later) with session manager.
+- Context sent on session start + voice-driven history expansion (“last 6 months”, “all history”).
+- Voice confirmations for create/update actions (“confirm”, “reject”).
+- Session-end summary saved as a note item ("Discussion with Doubao YYYY-MM-DD HH:mm–HH:mm").
+- Audio routing stabilized (speaker/Bluetooth) with voice processing + echo suppression.
+- Transcript improvements: merged assistant chunks, optional local speech toggle, Doubao ASR websocket, source picker.
+- Debug meters and packet stats available behind Debug-only toggle.
+- Transcript boxes now scroll and auto-scroll to latest line.
 - See `docs/voice-session.md` for the full flow + event schema.
 
-#### M9 Implementation Phases
-- Confirm provider API details (realtime streaming endpoints + event schema).
-- Add realtime session abstractions (provider protocol + session manager).
-- Build voice session UI (Start/End, transcripts, session status).
-- Wire context + voice confirmation flow (history expansion + apply changes).
-- Persist summary note on session end.
+### M10 — Voice Session polish + workflow
+- Add wrap-up voice command to summarize the session into Tasks/Ideas/Notes saved to Inbox.
+  - Accept natural phrasing ("wrap it up", "summarize our discussion", etc.) instead of exact keywords.
+  - Tasks default to `task` type with `Normal` priority and empty due date unless explicitly provided.
+- Verify Doubao ASR transcript in-device sessions.
+- Trim debug UI for production polish.
 
 ## Current Milestone
-M9 — Workout session mode polish (voice transcript + audio routing improvements in progress)
+M10 — Voice session polish + workflow (diff-at-end review)
 
 ## Definition of Done (M5)
 - Transcript/text sends prompt to structuring service
@@ -126,7 +134,7 @@ M9 — Workout session mode polish (voice transcript + audio routing improvement
 ## Session Notes (2026-01-28)
 - Doubao endpoint updated to `https://ark.cn-beijing.volces.com/api/v3/chat/completions`.
 - Doubao request switched to `messages` payload and correct JSON parsing.
-- Verified model `doubao-seed-1-6-lite-251015` works in-app.
+- Verified models `doubao-seed-1-6-lite-251015` and `doubao-seed-1-8-251228` work in-app.
 - M5 flow verified end-to-end (text + voice capture).
 
 ## Session Notes (2026-01-29)
@@ -165,12 +173,60 @@ M9 — Workout session mode polish (voice transcript + audio routing improvement
 - Tightened voice command matching to avoid accidental proposal discard.
 - Ignored occasional invalid realtime frames to prevent session error popups.
 
-## Next Steps (M9)
-- ASR approach chosen: separate Doubao realtime ASR alongside local speech toggle.
-- Implement Doubao ASR stream (voice-api websocket) + transcript merge.
-- Trim debug UI for production polish.
+## Session Notes (2026-02-10)
+- Transcript boxes now scroll and auto-scroll to the latest line in Voice Session and Voice Capture.
+
+## Session Notes (2026-02-12)
+- M10 wrap-up flow implemented: voice command triggers spoken summary + JSON item extraction for Inbox.
+- Added summary buffering/debounce, JSON parsing normalization, and task/idea/note save pipeline.
+- Added debug logging toggle + in-app log viewer; logs saved to `MyButlerLogs` (iCloud if enabled, otherwise app Documents).
+- Summary still too short and JSON/metadata is occasionally spoken; needs more natural spoken summary and stricter TTS suppression.
+
+## Session Notes (2026-02-18)
+- Fixed wrap-up JSON/TTS leakage by muting playback during summary items, waiting for audio silence, and tightening summary-item prompt context.
+- Added file sharing via explicit Info.plist so Finder can access `Documents/MyButlerLogs`.
+- Auto-export logs (voice-session + debug info) to Documents on session end; added auto-share sheet for one-tap AirDrop.
+- Added debug log tooling in Settings (show folder, debug info file, share link) and cleaned up Settings view to compile reliably.
+
+## Session Notes (2026-03-01)
+- Moved “Share Latest Logs” into Settings, removed extra debug buttons (Force iCloud Sync / Show Logs Folder), and fixed first-time blank share sheet.
+- Removed Inbox “All” filter to leave To Do / Ideas / Notes only.
+- Added JSON inbox export/import with merge/replace/skip modes via Settings → Inbox Backup.
+
+## Current Issues & Forward Plan (M10)
+
+### Pain Points Observed
+- Duplicate call-outs are inconsistent.
+- End-of-session diff generation can time out.
+- No mid-session writes; diff failure blocks updates.
+
+### Current Mitigations (Already Implemented)
+- Diff-based session end with review UI.
+- Retry button for diff generation; cached transcript/items for retry.
+- Diff normalization to remove create entries referenced by merges.
+- Voice diff logs and task/idea snapshots before/after diff apply.
+
+### Proposed Next Steps
+1) Improve duplicate call-out reliability
+   - Option A: Inject a hidden internal reminder after context.
+   - Option B: Add a short assistant preamble (“I’ll flag duplicates as we go”).
+
+2) Reduce diff timeouts
+   - Trim transcript window and limit context to tasks/ideas only.
+   - Add hard timeout + auto-retry once with smaller payload.
+
+3) Operational fallback
+   - Keep “Generate Proposed Diff” available using cached transcript + inbox snapshot.
+
+### RAG-Style Duplicate Handling (Planned)
+- Local embeddings + local search for tasks/ideas.
+- Per-utterance retrieval; send a compact candidate digest to the model.
+- Log embedding metrics to `voice-embedding-metrics-*.jsonl` per session.
 
 ## Next Time Start Here
-- Start M9 workout session mode polish.
-- Add continuous capture session + “Next item” voice command.
-- Verify Doubao ASR transcript in-device sessions.
+- Focus M10 voice session reliability work.
+- Verify Doubao ASR transcript in device sessions.
+
+## Project Logs
+- Voice session tracking (voice-session-only details): `docs/voice-session.md`
+- Issues and fixes: `issues_solutions.md`

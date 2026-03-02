@@ -255,7 +255,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SHZN8ZN344;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_api_doubao_com_NSExceptionAllowsInsecureHTTPLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_api_doubao_com_NSExceptionMinimumTLSVersion = TLSv1.0;
@@ -294,7 +295,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SHZN8ZN344;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_api_doubao_com_NSExceptionAllowsInsecureHTTPLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_api_doubao_com_NSExceptionMinimumTLSVersion = TLSv1.0;

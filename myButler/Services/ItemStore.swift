@@ -94,6 +94,62 @@ final class ItemStore: ObservableObject {
         deletedHistory.removeAll()
     }
 
+    func exportInbox() throws -> URL {
+        let export = InboxExport(version: 1, exportedAt: Date(), items: items)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(export)
+
+        let exportURL = try Self.exportFileURL()
+        try data.write(to: exportURL, options: [.atomic])
+        return exportURL
+    }
+
+    func importInbox(from url: URL, mode: InboxImportMode) throws -> InboxImportResult {
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let importedItems: [Item]
+        if let export = try? decoder.decode(InboxExport.self, from: data) {
+            if export.version > 1 {
+                throw InboxImportError.unsupportedVersion(export.version)
+            }
+            importedItems = export.items
+        } else if let legacyItems = try? decoder.decode([Item].self, from: data) {
+            importedItems = legacyItems
+        } else {
+            throw InboxImportError.invalidFormat
+        }
+
+        switch mode {
+        case .replace:
+            items = importedItems.sorted { $0.createdAt > $1.createdAt }
+            deletedHistory.removeAll()
+        case .merge:
+            var merged: [UUID: Item] = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+            for item in importedItems {
+                if let existing = merged[item.id] {
+                    if item.createdAt > existing.createdAt {
+                        merged[item.id] = item
+                    }
+                } else {
+                    merged[item.id] = item
+                }
+            }
+            items = merged.values.sorted { $0.createdAt > $1.createdAt }
+        case .skipDuplicates:
+            let existingIds = Set(items.map { $0.id })
+            let newItems = importedItems.filter { !existingIds.contains($0.id) }
+            items.append(contentsOf: newItems)
+            items.sort { $0.createdAt > $1.createdAt }
+        }
+
+        save()
+        return InboxImportResult(totalCount: items.count)
+    }
+
     // Loads existing items or seeds sample data on first run.
     private func load() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -134,6 +190,16 @@ final class ItemStore: ObservableObject {
     private static func defaultFileURL() -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         return documents[0].appendingPathComponent("items.json")
+    }
+
+    private static func exportFileURL() throws -> URL {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+        let exportDirectory = documents[0].appendingPathComponent("MyButlerExport", isDirectory: true)
+        try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let filename = "inbox-\(formatter.string(from: Date())).json"
+        return exportDirectory.appendingPathComponent(filename)
     }
 }
 

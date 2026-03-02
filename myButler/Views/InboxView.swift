@@ -20,7 +20,6 @@ enum InboxSortOption: String, CaseIterable, Identifiable {
 }
 
 enum InboxFilterOption: String, CaseIterable, Identifiable {
-    case all
     case task
     case idea
     case note
@@ -29,10 +28,8 @@ enum InboxFilterOption: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .all:
-            return "All"
         case .task:
-            return "Tasks"
+            return "To Do"
         case .idea:
             return "Ideas"
         case .note:
@@ -40,10 +37,8 @@ enum InboxFilterOption: String, CaseIterable, Identifiable {
         }
     }
 
-    var itemType: ItemType? {
+    var itemType: ItemType {
         switch self {
-        case .all:
-            return nil
         case .task:
             return .task
         case .idea:
@@ -59,7 +54,7 @@ struct InboxView: View {
     @State private var isShowingAdd = false
     @State private var isShowingVoiceCapture = false
     @State private var sortOption: InboxSortOption = .created
-    @State private var filterOption: InboxFilterOption = .all
+    @State private var filterOption: InboxFilterOption = .task
 
     private var sortedItems: [Item] {
         switch sortOption {
@@ -85,10 +80,7 @@ struct InboxView: View {
     }
 
     private var filteredItems: [Item] {
-        guard let itemType = filterOption.itemType else {
-            return sortedItems
-        }
-        return sortedItems.filter { $0.type == itemType }
+        sortedItems.filter { $0.type == filterOption.itemType }
     }
 
     var body: some View {
