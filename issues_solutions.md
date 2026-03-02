@@ -141,3 +141,5 @@
   - **Solution:** Add JSON export/import (with merge/replace/skip modes) under Settings → Inbox Backup.
 - **Issue (2026-03-01 11:00):** First-time export showed a blank share sheet.
   - **Solution:** Present the share sheet with an item-backed payload so a fresh controller is created with the file URL.
+- **Issue (2026-03-01 11:15):** Agent startup/permissions notes cluttered `PLAN.md`.
+  - **Solution:** Move agent instructions and permissions to `AGENTS.md`, keep `PLAN.md` focused on roadmap.

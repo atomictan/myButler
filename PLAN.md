@@ -1,11 +1,6 @@
 # Plan
 
-## Agent Startup Notes
-- Always read `PLAN.md`, `docs/voice-session.md`, and `issues_solutions.md` at session start.
-- Keep `PLAN.md` updated with top-level plan/status and non-voice-session milestones.
-- Keep `docs/voice-session.md` updated with detailed voice-session plan/status/implementation notes.
-- Keep `issues_solutions.md` updated each round with issues + solutions.
-    - Debug logs are saved in `~/Downloads` (files with the latest timestamp); user consents to reading those logs when requested, but tool approval may still be required by the sandbox.
+Agent instructions live in `AGENTS.md`.
 
 ## Guiding Principles (Stage 1)
 - Voice-first but always show text + structured output after each capture.
