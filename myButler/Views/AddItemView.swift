@@ -51,10 +51,10 @@ struct AddItemView: View {
                                 .tag(itemPriority)
                         }
                     }
-                    Toggle("Has due date", isOn: $hasDueDate)
-                    if hasDueDate {
-                        DatePicker("Due date", selection: $dueDate, displayedComponents: .date)
-                    }
+                Toggle("Has due date", isOn: $hasDueDate)
+                if hasDueDate {
+                    DatePicker("Due date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                }
                     TextField("Project", text: $projectText)
                     TextField("Tags (comma separated)", text: $tagsText)
                 }

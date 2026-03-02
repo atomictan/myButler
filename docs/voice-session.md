@@ -283,3 +283,7 @@ The goal is to improve duplicate detection without changing the existing diff-at
 - Moved “Share Latest Logs” into Settings under Voice Session debug actions.
 - Removed Force iCloud Sync / Show Logs Folder buttons from Settings.
 - Fixed first-time blank share sheet by presenting with an item-backed payload.
+
+## Session Notes (2026-03-02)
+- Added date-time due date support in prompts and UI, plus a local `NSDataDetector` fallback for relative dates.
+- Relative phrases like “next Monday 12pm” still not reliably captured in structuring results.

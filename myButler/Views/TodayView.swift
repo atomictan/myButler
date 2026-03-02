@@ -122,9 +122,9 @@ struct TodayView: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 Text(item.priority.label)
-                if let dueDate = item.dueDate {
-                    Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
-                }
+                    if let dueDate = item.dueDate {
+                        Text("Due \(Item.dueDateDisplay(dueDate))")
+                    }
                 if let project = item.project, !project.isEmpty {
                     Text(project)
                 }

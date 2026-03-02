@@ -56,7 +56,7 @@ struct ProposedStructureView: View {
                     }
                     Toggle("Has due date", isOn: $hasDueDate)
                     if hasDueDate {
-                        DatePicker("Due date", selection: $dueDate, displayedComponents: .date)
+                        DatePicker("Due date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
                     }
                     TextField("Project", text: $projectText)
                     TextField("Tags (comma separated)", text: $tagsText)

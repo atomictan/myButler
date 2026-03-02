@@ -55,6 +55,8 @@ struct InboxView: View {
     @State private var isShowingVoiceCapture = false
     @State private var sortOption: InboxSortOption = .created
     @State private var filterOption: InboxFilterOption = .task
+    @State private var editingDueDateItem: Item?
+    @State private var editingDueDate = Date()
 
     private var sortedItems: [Item] {
         switch sortOption {
@@ -119,7 +121,14 @@ struct InboxView: View {
                                     HStack(spacing: 8) {
                                         Text(item.priority.label)
                                         if let dueDate = item.dueDate {
-                                            Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                                            Text("Due \(Item.dueDateDisplay(dueDate))")
+                                        }
+                                        if isExpired(item) {
+                                            Button("Expired") {
+                                                beginDueDateEdit(for: item)
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .tint(.red)
                                         }
                                         if let project = item.project, !project.isEmpty {
                                             Text(project)
@@ -178,6 +187,18 @@ struct InboxView: View {
             .sheet(isPresented: $isShowingVoiceCapture) {
                 VoiceCaptureView(store: store)
             }
+            .sheet(item: $editingDueDateItem) { item in
+                DueDateEditSheet(
+                    item: item,
+                    dueDate: $editingDueDate,
+                    onSave: { newDate in
+                        store.updateItem(id: item.id) { updated in
+                            updated.dueDate = newDate
+                        }
+                    },
+                    onDone: { editingDueDateItem = nil }
+                )
+            }
         }
     }
 
@@ -185,6 +206,45 @@ struct InboxView: View {
         let itemsToDelete = offsets.map { filteredItems[$0] }
         itemsToDelete.forEach { item in
             store.deleteItem(id: item.id)
+        }
+    }
+
+    private func beginDueDateEdit(for item: Item) {
+        editingDueDate = item.dueDate ?? Date()
+        editingDueDateItem = item
+    }
+
+    private func isExpired(_ item: Item) -> Bool {
+        guard item.type == .task, let dueDate = item.dueDate else {
+            return false
+        }
+        let today = Date()
+        return Calendar.current.compare(dueDate, to: today, toGranularity: .day) == .orderedAscending
+    }
+}
+
+private struct DueDateEditSheet: View {
+    let item: Item
+    @Binding var dueDate: Date
+    let onSave: (Date) -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Due date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+            }
+            .navigationTitle("Update Due Date")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onDone()
+                    }
+                }
+            }
+        }
+        .onChange(of: dueDate) { _, newValue in
+            onSave(newValue)
         }
     }
 }

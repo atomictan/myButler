@@ -327,7 +327,7 @@ enum VoiceSessionDiffPrompt {
               "type": "task|idea|note",
               "title": "…",
               "details": "…",
-              "dueDate": "YYYY-MM-DD or null",
+              "dueDate": "YYYY-MM-DDTHH:mm or null",
               "priority": "low|normal|high",
               "project": "… or null",
               "tags": ["…"]
@@ -339,7 +339,7 @@ enum VoiceSessionDiffPrompt {
               "changes": {
                 "title": "…",
                 "details": "…",
-                "dueDate": "YYYY-MM-DD or null",
+                "dueDate": "YYYY-MM-DDTHH:mm or null",
                 "priority": "low|normal|high",
                 "project": "… or null",
                 "tags": ["…"]

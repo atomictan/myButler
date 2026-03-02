@@ -109,3 +109,12 @@ struct Item: Identifiable, Codable {
         try container.encodeIfPresent(project, forKey: .project)
     }
 }
+
+extension Item {
+    static func dueDateDisplay(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let hasTime = calendar.component(.hour, from: date) != 0 || calendar.component(.minute, from: date) != 0
+        let timeStyle: Date.FormatStyle.TimeStyle = hasTime ? .shortened : .omitted
+        return date.formatted(date: .abbreviated, time: timeStyle)
+    }
+}

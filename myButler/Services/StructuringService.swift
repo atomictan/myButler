@@ -22,7 +22,7 @@ struct StructuringPrompt {
         "title": { "type": "string" },
         "details": { "type": "string" },
         "priority": { "type": "string", "enum": ["low", "normal", "high"] },
-        "dueDate": { "type": ["string", "null"], "format": "date" },
+        "dueDate": { "type": ["string", "null"], "format": "date-time" },
         "tags": { "type": "array", "items": { "type": "string" } },
         "project": { "type": ["string", "null"] }
       },
@@ -42,33 +42,30 @@ struct StructuringPrompt {
         \(jsonSchema)
 
         Rules:
-        - "dueDate" must be ISO-8601 date string (YYYY-MM-DD) or null if unknown.
+        - "dueDate" must be ISO-8601 date-time (YYYY-MM-DDTHH:mm). If time is unknown, use YYYY-MM-DD.
+        - Resolve relative dates like "tomorrow" or "next Friday 6pm" using the current date/time.
         - "priority" defaults to "normal" if not mentioned.
         - "tags" should be concise single words (no # prefix).
         - "project" should be a short name or null if unknown.
+
+        Current time: \(DueDateParser.referenceTimestamp())
+        Time zone: \(TimeZone.current.identifier)
 
         Input:
         \(trimmedText)
         """
     }
+
 }
 
 struct StructuringParser {
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .iso8601)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 
     static func decodeDraft(from jsonString: String) throws -> StructuredDraft {
         let data = Data(jsonString.utf8)
         let decoder = JSONDecoder()
         let response = try decoder.decode(StructuredResponse.self, from: data)
 
-        let dueDate = response.dueDate.flatMap { dateFormatter.date(from: $0) }
+        let dueDate = DueDateParser.parse(response.dueDate)
 
         return StructuredDraft(
             type: response.itemType,
@@ -111,6 +108,7 @@ struct StructuringParser {
             project: resolvedProject
         )
     }
+
 }
 
 private struct StructuredResponse: Decodable {
@@ -145,7 +143,7 @@ enum StructuringFixtures {
       "title": "Follow up with Sam",
       "details": "Follow up with Sam about the partnership deck next week.",
       "priority": "high",
-      "dueDate": "2026-02-10",
+      "dueDate": "2026-02-10T10:00",
       "tags": ["follow-up", "partnership"]
     }
     """
@@ -167,7 +165,11 @@ final class StructuringService {
     }
 
     func structure(text: String) async throws -> StructuredDraft {
-        try await provider.structure(text: text)
+        var draft = try await provider.structure(text: text)
+        if draft.dueDate == nil {
+            draft.dueDate = DueDateParser.detect(in: text)
+        }
+        return draft
     }
 
     static func defaultProviderKind() -> StructuringProviderKind {

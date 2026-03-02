@@ -1,22 +1,99 @@
 # Voice Session Issues & Solutions
 
-## Summary Review Flow
-- **Issue (2026-02-28 23:45):** Duplicate prompt missed similarity when ASR wording lowered embedding scores.
-  - **Solution:** Add a fallback token-overlap similarity check when embeddings return no matches.
-- **Issue (2026-02-28 23:30):** Mock Up Voice Session added noise and maintenance burden.
-  - **Solution:** Remove mock session UI, settings hooks, and mock-only helpers from the app.
-- **Issue (2026-02-28 23:10):** Greeting added extra pre-user text (“Okay, what’s your question?”).
-  - **Solution:** Only allow assistant text chunks that match the exact greeting prefix and suppress any additional pre-user text until the user speaks.
-- **Issue (2026-02-28 23:00):** Assistant hallucinated inbox items because context was never delivered before the first query.
-  - **Solution:** Send context immediately after the greeting (with a “Context only” guard) while still suppressing pre-user responses.
-- **Issue (2026-02-28 22:50):** Local greeting voice differs from the model voice, and greeting text was partially suppressed.
-  - **Solution:** Trigger greeting via the model prompt, allow a short pre-user grace window for the greeting, and delay sending context until after the first user transcript.
-- **Issue (2026-02-28 22:40):** Session opener sounded awkward and transcript lingered into the next session.
-  - **Solution:** Add a local greeting (“Hi, what can I do for you?”) on session start and clear the transcript after a successful diff review is prepared.
-- **Issue (2026-02-28 22:25):** Assistant starts the session with “Got it. What would you like to do with these items?” before the user speaks.
-  - **Solution:** Suppress assistant text/audio until the first user transcript arrives, preventing context-ack responses from being spoken or logged.
-- **Issue (2026-02-28 22:10):** Delete requests were dropped between transcript and diff (e.g., “remove dinner with Jia Yi”).
-  - **Solution:** Append deletion hints from the transcript into the diff-summary payload and emphasize removals in summary prompt so diff generation includes explicit deletes.
+- **Issue (2026-02-21 12:32):** Summary items request was sent while the assistant was still speaking, causing the model to respond to itself and skip the review prompt.
+  - **Solution:** Delay summary item requests until output silence; suppress assistant text during summary review; use local TTS prompts; add explicit review start scheduling to avoid cooldown conflicts.
+- **Issue (2026-02-21 12:32):** Summary review prompts were not visible in logs (local TTS only).
+  - **Solution:** Log summary review prompts and review start in debug logs.
+- **Issue (2026-02-21 12:32):** Streamed JSON fragments timed out before the parser saw a complete array.
+  - **Solution:** Sanitize the streamed buffer, strip code fences/newlines, normalize keys like `dueDate`, and re-parse after cooldown timeout.
+- **Issue (2026-02-21 12:32):** Summary audio was cut off when switching to summary-items collection.
+  - **Solution:** Avoid stopping playback during summary-items request; extend output silence window to reduce premature cutoffs.
+- **Issue (2026-02-21 12:32):** Fragmented `PROPOSAL_JSON` marker text entered the transcript.
+  - **Solution:** Detect marker fragments (e.g., `PRO`, `POS`, `_JSON`) and route them into proposal capture instead of the transcript.
+- **Issue (2026-02-21 12:32):** No single place to track behavior quality or saved items at session end.
+  - **Solution:** Generate `voice-monitor-*.json` (events + analysis) and `voice-items-*.json` (tasks/ideas snapshot) per session, auto-export with existing logs.
+- **Issue (2026-02-21 12:32):** Finder sharing is slower than AirDrop.
+  - **Solution:** Add “Share Latest Logs” button on the Voice screen to open the system share sheet (AirDrop available).
+- **Issue (2026-02-21 12:33):** Sharing logs exported every historical file instead of only the current run.
+  - **Solution:** Export and share only the current run’s log files using the captured session artifacts list.
+- **Issue (2026-02-21 14:28):** Transcript included unspoken system lines while missing locally spoken summary review prompts.
+  - **Solution:** Suppress `System:` transcript entries and append spoken summary review prompts to the transcript.
+- **Issue (2026-02-23 11:24):** Voice monitor contained text that was not actually audible due to TTS glitches.
+  - **Solution:** Track spoken events only after TTS completes and build voice-monitor logs from those spoken events.
+- **Issue (2026-02-24 00:20):** Summary review prompts sounded robotic and overly command-heavy.
+  - **Solution:** Rewrote prompt templates to use natural phrasing while still keeping command words available.
+- **Issue (2026-02-24 00:28):** Confirmation prompts still sounded stiff (“Say confirm to apply”) and summary review choices felt long.
+  - **Solution:** Switched to shorter, conversational phrasing (“Just say confirm”, “Want me to save them all”) while keeping command words intact.
+- **Issue (2026-02-24 00:32):** Summary review prompts still listed too many options up front and felt verbose.
+  - **Solution:** Removed extra options from initial prompts; keep short prompts unless the user asks for more.
+- **Issue (2026-02-24 00:36):** Similar-item flow asked for a second confirmation after the user already said “merge” or “new,” which felt unnatural.
+  - **Solution:** Apply merge/new immediately and advance the review without an extra confirmation prompt.
+- **Issue (2026-02-24 00:43):** Assistant still said “just say confirm” up front, which felt pushy before the user decided.
+  - **Solution:** Removed the extra “just say confirm” phrasing from initial acknowledgements.
+- **Issue (2026-02-24 00:47):** Similar-item prompt still sounded robotic (“Idea 1… Similar to…”).
+  - **Solution:** Rewrote similar-item phrasing to a natural question (“I found something similar… merge or add new?”).
+- **Issue (2026-02-24 00:50):** Similar-item prompt repeated “I found something similar,” which sounded redundant.
+  - **Solution:** Removed the extra preface so only the main question is spoken.
+- **Issue (2026-02-24 00:52):** Similar-item prompt repeated the full title, which felt stiff.
+  - **Solution:** Shortened the prompt to say “add it as a new one” instead of repeating the title.
+- **Issue (2026-02-24 00:55):** Wrap-up line “All done. Let me know if you'd like anything else.” felt stiff.
+  - **Solution:** Switched to “All set. Anything else you want to add?” for a more conversational close.
+- **Issue (2026-02-24 00:57):** The merge/new question still sounded formal (“Should I merge it…”).
+  - **Solution:** Rephrased to “Want me to merge it, or keep it as a new item?”
+- **Issue (2026-02-24 00:59):** New-items summary used awkward plurals (“1 new To Do’s”) and a stiff “database” phrase.
+  - **Solution:** Added proper singular/plural labels and a lighter “Want me to add them?” prompt.
+- **Issue (2026-02-24 01:05):** Summary announcement read “1 new To Do and 0 new Ideas,” which felt robotic.
+  - **Solution:** Omit zero-count categories and switch to “add it/them” based on item count.
+- **Issue (2026-02-24 01:08):** After confirming a single item, summary review still prompted the user instead of ending the flow.
+  - **Solution:** Skip the summary review when a single item follows a confirm and close with a brief wrap-up line.
+- **Issue (2026-02-24 01:20):** Assistant still asked for confirmation on clear commands (“Want me to add that reminder?”) before wrapping up.
+  - **Solution:** Updated the system prompt and auto-apply logic to execute clear commands immediately and skip extra confirmation.
+- **Issue (2026-02-24 01:25):** Even with auto-apply, proposal capture still prompted “confirm” and triggered summary review.
+  - **Solution:** Auto-apply proposals during capture when the assistant text is a clear action and skip the confirm prompt.
+- **Issue (2026-02-24 01:29):** Auto-apply flow spoke the wrap-up twice because summary review also emitted the same line.
+  - **Solution:** Track when a wrap-up was already spoken and skip the duplicate summary-review prompt.
+- **Issue (2026-02-24 01:49):** Summary review repeated the same “Want me to add it?” question when the user asked to review items.
+  - **Solution:** Switch review prompts to a short numbered line with “Confirm or skip?” and adjust the announcement text based on phase.
+- **Issue (2026-02-24 02:20):** Real session kept asking follow-ups after “just write it down,” and the task didn’t save.
+  - **Solution:** Update the system prompt to stop follow-ups on “just write it down,” and broaden auto-apply phrases to capture “noted/scheduled.”
+- **Issue (2026-02-24 02:30):** Real session said the item was added but no To Do was saved; assistant response was in Chinese and didn’t trigger auto-apply.
+  - **Solution:** Require PROPOSAL_JSON on every create/update in the system prompt and add Chinese action phrases to auto-apply detection.
+- **Issue (2026-02-24 02:34):** Assistant said “已记录” but no item was saved because PROPOSAL_JSON was missing.
+  - **Solution:** Add a fallback that auto-captures the last user utterance when the assistant says it was recorded.
+- **Issue (2026-02-24 02:37):** Auto-capture didn’t trigger because assistant text arrives in token chunks, so action phrases were never detected.
+  - **Solution:** Run auto-apply detection against the full accumulated assistant line from the transcript.
+- **Issue (2026-02-24 02:43):** Auto-apply still didn’t trigger for phrases like “I’ve added it to your schedule” or “记录下”.
+  - **Solution:** Expanded auto-apply phrase list to include “added/recorded/noted/记录下” variants.
+- **Issue (2026-02-24 02:50):** Model should emit JSON for every detected task/idea and handle duplicates by asking the user.
+  - **Solution:** Updated the system prompt and added duplicate detection that prompts the model to ask merge vs new.
+- **Issue (2026-02-24 02:56):** Auto-apply still failed on Chinese responses because the transcript inserts spaces between characters.
+  - **Solution:** Compare auto-apply phrases against a whitespace-stripped assistant line.
+- **Issue (2026-02-24 03:10):** Mid-session parsing and auto-apply are brittle; need end-of-session diff review.
+  - **Solution:** Added diff-based session end flow with review UI and diff service.
+- **Issue (2026-02-24 03:25):** Proposal review appeared later and no diff log was captured; logs auto-shared too early.
+  - **Solution:** Write a `voice-diff-*.json` log when the diff is generated and stop auto-sharing logs on session end.
+- **Issue (2026-02-24 03:30):** Diff review appears after a delay with no visible feedback.
+  - **Solution:** Show a “Preparing review…” spinner while the diff is generated.
+- **Issue (2026-02-24 03:30):** Diff generator created duplicates instead of flagging similar existing items.
+  - **Solution:** Strengthen diff prompt to emit merge entries for duplicates and explain them.
+- **Issue (2026-02-24 03:35):** Duplicates should be surfaced during the live conversation and the diff should honor the user’s merge/new choice.
+  - **Solution:** Updated the live system prompt to ask about duplicates and the diff prompt to follow user decisions in the transcript.
+- **Issue (2026-02-24 03:42):** Diff response listed merged items in both Create and Merge sections.
+  - **Solution:** Normalize diffs by removing create entries that are referenced by merges.
+- **Issue (2026-02-24 03:48):** Assistant missed duplicate flight mentions during conversation, so the diff had no guidance to merge.
+  - **Solution:** Add live duplicate prompting based on local similarity detection and push a merge/new question to the model.
+- **Issue (2026-02-24 03:55):** Diff generation timeout left no way to recover and the session’s transcript was stuck.
+  - **Solution:** Cache transcript/items for retry and add a “Retry” button in the diff error alert.
+- **Issue (2026-02-24 03:58):** Diff generation sometimes times out with no visibility into where it stalls.
+  - **Solution:** Added debug logs around diff generation start/end, duration, and errors.
+- **Issue (2026-02-24 04:05):** Diff generation timed out with no persistent recovery action.
+  - **Solution:** Added a “Generate Proposed Diff” button and logged diff failures into the transcript.
+- **Issue (2026-02-24 04:12):** Duplicate detection mismatch needed visibility into inbox state before/after diff apply.
+  - **Solution:** Log inbox snapshots before diff generation and after diff apply.
+- **Issue (2026-02-24 04:18):** Diff timeout errors had no dedicated log for diagnosis.
+  - **Solution:** Write a `voice-diff-error-*.json` log on diff failures/retries.
+- **Issue (2026-02-24 04:22):** Inbox snapshot logs were too large; only tasks/ideas are needed for diff debugging.
+  - **Solution:** Log task/idea snapshots before and after diff instead of full inbox dumps.
 - **Issue (2026-02-27 23:55):** Diff merge confirmations left existing duplicates in the inbox.
   - **Solution:** Normalize diffs to add delete entries for duplicate items when a merge is present; preselect deletes in review.
 - **Issue (2026-02-27 23:55):** Merge updates kept stale due dates instead of applying the new time.
@@ -27,110 +104,22 @@
   - **Solution:** Document that metrics are only written when a duplicate prompt is triggered; add optional future logging for no-match cases if needed.
 - **Issue (2026-02-27 23:55):** Similarity search missed “AI assistant for analog circuit design,” likely due to mixed Chinese/English utterance lowering embedding scores.
   - **Solution:** Consider lowering the minimum similarity threshold for mixed-language text or normalizing language before embedding.
-- **Issue (2026-02-24 04:22):** Inbox snapshot logs were too large; only tasks/ideas are needed for diff debugging.
-  - **Solution:** Log task/idea snapshots before and after diff instead of full inbox dumps.
-- **Issue (2026-02-24 04:18):** Diff timeout errors had no dedicated log for diagnosis.
-  - **Solution:** Write a `voice-diff-error-*.json` log on diff failures/retries.
-- **Issue (2026-02-24 04:12):** Duplicate detection mismatch needed visibility into inbox state before/after diff apply.
-  - **Solution:** Log inbox snapshots before diff generation and after diff apply.
-- **Issue (2026-02-24 04:05):** Diff generation timed out with no persistent recovery action.
-  - **Solution:** Added a “Generate Proposed Diff” button and logged diff failures into the transcript.
-- **Issue (2026-02-24 03:58):** Diff generation sometimes times out with no visibility into where it stalls.
-  - **Solution:** Added debug logs around diff generation start/end, duration, and errors.
-- **Issue (2026-02-24 03:55):** Diff generation timeout left no way to recover and the session’s transcript was stuck.
-  - **Solution:** Cache transcript/items for retry and add a “Retry” button in the diff error alert.
-- **Issue (2026-02-24 03:48):** Assistant missed duplicate flight mentions during conversation, so the diff had no guidance to merge.
-  - **Solution:** Add live duplicate prompting based on local similarity detection and push a merge/new question to the model.
-- **Issue (2026-02-24 03:42):** Diff response listed merged items in both Create and Merge sections.
-  - **Solution:** Normalize diffs by removing create entries that are referenced by merges.
-- **Issue (2026-02-24 03:35):** Duplicates should be surfaced during the live conversation and the diff should honor the user’s merge/new choice.
-  - **Solution:** Updated the live system prompt to ask about duplicates and the diff prompt to follow user decisions in the transcript.
-- **Issue (2026-02-24 03:30):** Diff review appears after a delay with no visible feedback.
-  - **Solution:** Show a “Preparing review…” spinner while the diff is generated.
-- **Issue (2026-02-24 03:30):** Diff generator created duplicates instead of flagging similar existing items.
-  - **Solution:** Strengthen diff prompt to emit merge entries for duplicates and explain them.
-- **Issue (2026-02-24 03:25):** Proposal review appeared later and no diff log was captured; logs auto-shared too early.
-  - **Solution:** Write a `voice-diff-*.json` log when the diff is generated and stop auto-sharing logs on session end.
-- **Issue (2026-02-24 03:10):** Mid-session parsing and auto-apply are brittle; need end-of-session diff review.
-  - **Solution:** Added diff-based session end flow with review UI and diff service.
-- **Issue (2026-02-24 02:56):** Auto-apply still failed on Chinese responses because the transcript inserts spaces between characters.
-  - **Solution:** Compare auto-apply phrases against a whitespace-stripped assistant line.
-- **Issue (2026-02-24 02:50):** Model should emit JSON for every detected task/idea and handle duplicates by asking the user.
-  - **Solution:** Updated the system prompt and added duplicate detection that prompts the model to ask merge vs new.
-- **Issue (2026-02-24 02:43):** Auto-apply still didn’t trigger for phrases like “I’ve added it to your schedule” or “记录下”.
-  - **Solution:** Expanded auto-apply phrase list to include “added/recorded/noted/记录下” variants.
-- **Issue (2026-02-24 02:37):** Auto-capture didn’t trigger because assistant text arrives in token chunks, so action phrases were never detected.
-  - **Solution:** Run auto-apply detection against the full accumulated assistant line from the transcript.
-- **Issue (2026-02-24 02:34):** Assistant said “已记录” but no item was saved because PROPOSAL_JSON was missing.
-  - **Solution:** Add a fallback that auto-captures the last user utterance when the assistant says it was recorded.
-- **Issue (2026-02-24 02:30):** Real session said the item was added but no To Do was saved; assistant response was in Chinese and didn’t trigger auto-apply.
-  - **Solution:** Require PROPOSAL_JSON on every create/update in the system prompt and add Chinese action phrases to auto-apply detection.
-- **Issue (2026-02-24 02:20):** Real session kept asking follow-ups after “just write it down,” and the task didn’t save.
-  - **Solution:** Update the system prompt to stop follow-ups on “just write it down,” and broaden auto-apply phrases to capture “noted/scheduled.”
-- **Issue (2026-02-24 01:49):** Summary review repeated the same “Want me to add it?” question when the user asked to review items.
-  - **Solution:** Switch review prompts to a short numbered line with “Confirm or skip?” and adjust the announcement text based on phase.
-- **Issue (2026-02-24 01:29):** Auto-apply flow spoke the wrap-up twice because summary review also emitted the same line.
-  - **Solution:** Track when a wrap-up was already spoken and skip the duplicate summary-review prompt.
-- **Issue (2026-02-24 01:25):** Even with auto-apply, proposal capture still prompted “confirm” and triggered summary review.
-  - **Solution:** Auto-apply proposals during capture when the assistant text is a clear action and skip the confirm prompt.
-- **Issue (2026-02-24 01:20):** Assistant still asked for confirmation on clear commands (“Want me to add that reminder?”) before wrapping up.
-  - **Solution:** Updated the system prompt and auto-apply logic to execute clear commands immediately and skip extra confirmation.
-- **Issue (2026-02-24 01:08):** After confirming a single item, summary review still prompted the user instead of ending the flow.
-  - **Solution:** Skip the summary review when a single item follows a confirm and close with a brief wrap-up line.
-- **Issue (2026-02-24 01:05):** Summary announcement read “1 new To Do and 0 new Ideas,” which felt robotic.
-  - **Solution:** Omit zero-count categories and switch to “add it/them” based on item count.
-- **Issue (2026-02-24 00:59):** New-items summary used awkward plurals (“1 new To Do’s”) and a stiff “database” phrase.
-  - **Solution:** Added proper singular/plural labels and a lighter “Want me to add them?” prompt.
-- **Issue (2026-02-24 00:57):** The merge/new question still sounded formal (“Should I merge it…”).
-  - **Solution:** Rephrased to “Want me to merge it, or keep it as a new item?”
-- **Issue (2026-02-24 00:55):** Wrap-up line “All done. Let me know if you'd like anything else.” felt stiff.
-  - **Solution:** Switched to “All set. Anything else you want to add?” for a more conversational close.
-- **Issue (2026-02-24 00:52):** Similar-item prompt repeated the full title, which felt stiff.
-  - **Solution:** Shortened the prompt to say “add it as a new one” instead of repeating the title.
-- **Issue (2026-02-24 00:50):** Similar-item prompt repeated “I found something similar,” which sounded redundant.
-  - **Solution:** Removed the extra preface so only the main question is spoken.
-- **Issue (2026-02-24 00:47):** Similar-item prompt still sounded robotic (“Idea 1… Similar to…”).
-  - **Solution:** Rewrote similar-item phrasing to a natural question (“I found something similar… merge or add new?”).
-- **Issue (2026-02-24 00:43):** Assistant still said “just say confirm” up front, which felt pushy before the user decided.
-  - **Solution:** Removed the extra “just say confirm” phrasing from initial acknowledgements.
-- **Issue (2026-02-24 00:36):** Similar-item flow asked for a second confirmation after the user already said “merge” or “new,” which felt unnatural.
-  - **Solution:** Apply merge/new immediately and advance the review without an extra confirmation prompt.
-- **Issue (2026-02-24 00:32):** Summary review prompts still listed too many options up front and felt verbose.
-  - **Solution:** Removed extra options from initial prompts; keep short prompts unless the user asks for more.
-- **Issue (2026-02-24 00:28):** Confirmation prompts still sounded stiff (“Say confirm to apply”) and summary review choices felt long.
-  - **Solution:** Switched to shorter, conversational phrasing (“Just say confirm”, “Want me to save them all”) while keeping command words intact.
-- **Issue (2026-02-24 00:20):** Summary review prompts sounded robotic and overly command-heavy.
-  - **Solution:** Rewrote prompt templates to use natural phrasing while still keeping command words available.
-- **Issue (2026-02-21 12:32):** Summary items request was sent while the assistant was still speaking, causing the model to respond to itself and skip the review prompt.
-  - **Solution:** Delay summary item requests until output silence; suppress assistant text during summary review; use local TTS prompts; add explicit review start scheduling to avoid cooldown conflicts.
-- **Issue (2026-02-21 12:32):** Summary review prompts were not visible in logs (local TTS only).
-  - **Solution:** Log summary review prompts and review start in debug logs.
-- **Issue (2026-02-21 14:28):** Transcript included unspoken system lines while missing locally spoken summary review prompts.
-  - **Solution:** Suppress `System:` transcript entries and append spoken summary review prompts to the transcript.
-- **Issue (2026-02-23 11:24):** Voice monitor contained text that was not actually audible due to TTS glitches.
-  - **Solution:** Track spoken events only after TTS completes and build voice-monitor logs from those spoken events.
-
-## Summary Items Parsing
-- **Issue (2026-02-21 12:32):** Streamed JSON fragments timed out before the parser saw a complete array.
-  - **Solution:** Sanitize the streamed buffer, strip code fences/newlines, normalize keys like `dueDate`, and re-parse after cooldown timeout.
-
-## Audio Cutoff During Summary
-- **Issue (2026-02-21 12:32):** Summary audio was cut off when switching to summary-items collection.
-  - **Solution:** Avoid stopping playback during summary-items request; extend output silence window to reduce premature cutoffs.
-
-## PROPOSAL_JSON Leaking Into Transcript
-- **Issue (2026-02-21 12:32):** Fragmented `PROPOSAL_JSON` marker text entered the transcript.
-  - **Solution:** Detect marker fragments (e.g., `PRO`, `POS`, `_JSON`) and route them into proposal capture instead of the transcript.
-
-## Debug/Monitoring and Self-Contained Loop
-- **Issue (2026-02-21 12:32):** No single place to track behavior quality or saved items at session end.
-  - **Solution:** Generate `voice-monitor-*.json` (events + analysis) and `voice-items-*.json` (tasks/ideas snapshot) per session, auto-export with existing logs.
-
-## Easier Log Sharing
-- **Issue (2026-02-21 12:32):** Finder sharing is slower than AirDrop.
-- **Solution:** Add “Share Latest Logs” button on the Voice screen to open the system share sheet (AirDrop available).
-- **Issue (2026-02-21 12:33):** Sharing logs exported every historical file instead of only the current run.
-  - **Solution:** Export and share only the current run’s log files using the captured session artifacts list.
+- **Issue (2026-02-28 22:10):** Delete requests were dropped between transcript and diff (e.g., “remove dinner with Jia Yi”).
+  - **Solution:** Append deletion hints from the transcript into the diff-summary payload and emphasize removals in summary prompt so diff generation includes explicit deletes.
+- **Issue (2026-02-28 22:25):** Assistant starts the session with “Got it. What would you like to do with these items?” before the user speaks.
+  - **Solution:** Suppress assistant text/audio until the first user transcript arrives, preventing context-ack responses from being spoken or logged.
+- **Issue (2026-02-28 22:40):** Session opener sounded awkward and transcript lingered into the next session.
+  - **Solution:** Add a local greeting (“Hi, what can I do for you?”) on session start and clear the transcript after a successful diff review is prepared.
+- **Issue (2026-02-28 22:50):** Local greeting voice differs from the model voice, and greeting text was partially suppressed.
+  - **Solution:** Trigger greeting via the model prompt, allow a short pre-user grace window for the greeting, and delay sending context until after the first user transcript.
+- **Issue (2026-02-28 23:00):** Assistant hallucinated inbox items because context was never delivered before the first query.
+  - **Solution:** Send context immediately after the greeting (with a “Context only” guard) while still suppressing pre-user responses.
+- **Issue (2026-02-28 23:10):** Greeting added extra pre-user text (“Okay, what’s your question?”).
+  - **Solution:** Only allow assistant text chunks that match the exact greeting prefix and suppress any additional pre-user text until the user speaks.
+- **Issue (2026-02-28 23:30):** Mock Up Voice Session added noise and maintenance burden.
+  - **Solution:** Remove mock session UI, settings hooks, and mock-only helpers from the app.
+- **Issue (2026-02-28 23:45):** Duplicate prompt missed similarity when ASR wording lowered embedding scores.
+  - **Solution:** Add a fallback token-overlap similarity check when embeddings return no matches.
 - **Issue (2026-03-01 10:10):** Log sharing action lived in the Voice screen, making it harder to find.
   - **Solution:** Move “Share Latest Logs” into Settings under Voice Session debug actions.
 - **Issue (2026-03-01 10:20):** Settings had extra debug buttons that aren’t needed.
@@ -143,3 +132,23 @@
   - **Solution:** Present the share sheet with an item-backed payload so a fresh controller is created with the file URL.
 - **Issue (2026-03-01 11:15):** Agent startup/permissions notes cluttered `PLAN.md`.
   - **Solution:** Move agent instructions and permissions to `AGENTS.md`, keep `PLAN.md` focused on roadmap.
+- **Issue (2026-03-01 11:40):** Overdue To Do items were not clearly flagged or easy to reschedule.
+  - **Solution:** Mark expired To Do items in the Inbox list and add a quick due-date edit sheet.
+- **Issue (2026-03-01 12:05):** Build failed because `Config/Info.plist` was missing.
+  - **Solution:** Restore a minimal `Config/Info.plist` with required bundle keys and file sharing flags.
+- **Issue (2026-03-01 12:15):** Build complained about missing launch configuration/storyboard.
+  - **Solution:** Add a minimal `UILaunchScreen` dictionary to `Config/Info.plist`.
+- **Issue (2026-03-01 12:20):** Build complained about supporting all interface orientations.
+  - **Solution:** Add `UISupportedInterfaceOrientations` entries to `Config/Info.plist`.
+- **Issue (2026-03-01 12:35):** Expired badge persisted after moving due date to the future.
+  - **Solution:** Compare due dates at day granularity to avoid stale time-based expiration.
+- **Issue (2026-03-01 12:45):** Due date editor was confusing and did not update expiration state reliably.
+  - **Solution:** Remove the clear button and autosave due date changes with a single Done action.
+- **Issue (2026-03-01 12:50):** `UIRequiresFullScreen` is deprecated on iOS 26.
+  - **Solution:** Remove `UIRequiresFullScreen` and rely on explicit orientation lists.
+- **Issue (2026-03-01 13:05):** Natural language due dates ("next Friday 6pm") were dropped and due times were not shown.
+  - **Solution:** Accept ISO-8601 date-time in structuring/diff prompts, add a shared due-date parser, and show due time in UI/date pickers.
+- **Issue (2026-03-01 13:20):** Structuring still missed relative dates like "next Monday 12pm".
+  - **Solution:** Add a local `NSDataDetector` fallback to extract due dates from the raw input text.
+- **Issue (2026-03-02 09:00):** Relative due dates ("next Monday 12pm") still not captured after fallback.
+  - **Solution:** Pending — need targeted parser or stricter prompt enforcement.

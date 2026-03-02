@@ -906,7 +906,7 @@ final class VoiceSessionViewModel: ObservableObject {
 
     private func formatContext(items: [Item], title: String) -> String {
         let lines = items.map { item in
-            let dueDate = item.dueDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "none"
+            let dueDate = item.dueDate.map { Item.dueDateDisplay($0) } ?? "none"
             let project = item.project?.isEmpty == false ? item.project! : "none"
             let tags = item.tags.isEmpty ? "none" : item.tags.joined(separator: ", ")
             return "- [\(item.type.rawValue)] \(item.title) (id: \(item.id.uuidString), project: \(project), tags: \(tags), due: \(dueDate))"
@@ -2207,12 +2207,7 @@ final class VoiceSessionViewModel: ObservableObject {
         guard let dateString = value as? String, !dateString.isEmpty else {
             return nil
         }
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .iso8601)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.date(from: dateString)
+        return DueDateParser.parse(dateString)
     }
 
     private func applyPendingProposal(silent: Bool) {

@@ -67,7 +67,7 @@ struct ProjectsView: View {
             HStack(spacing: 8) {
                 Text(item.priority.label)
                 if let dueDate = item.dueDate {
-                    Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                    Text("Due \(Item.dueDateDisplay(dueDate))")
                 }
                 if !item.tags.isEmpty {
                     Text(item.tags.joined(separator: ", "))

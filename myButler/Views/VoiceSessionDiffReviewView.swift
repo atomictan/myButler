@@ -147,7 +147,7 @@ struct VoiceSessionDiffReviewView: View {
             parts.append("Details updated")
         }
         if let dueDate = update.changes.dueDate {
-            parts.append("Due → \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+            parts.append("Due → \(Item.dueDateDisplay(dueDate))")
         }
         if let priority = update.changes.priority {
             parts.append("Priority → \(priority.label)")

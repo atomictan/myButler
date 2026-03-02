@@ -128,18 +128,9 @@ struct VoiceSessionDiffSelection: Codable {
 }
 
 private enum VoiceSessionDiffDecode {
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .iso8601)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 
     static func date(from value: String?) -> Date? {
-        guard let value, !value.isEmpty else { return nil }
-        return dateFormatter.date(from: value)
+        DueDateParser.parse(value)
     }
 
     static func priority(from value: String?) -> ItemPriority? {
