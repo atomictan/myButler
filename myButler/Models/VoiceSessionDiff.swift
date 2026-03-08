@@ -61,6 +61,26 @@ struct VoiceSessionDiffCreate: Codable, Identifiable {
         case tags
     }
 
+    init(
+        tempId: String,
+        type: ItemType,
+        title: String,
+        details: String,
+        dueDate: Date?,
+        priority: ItemPriority,
+        project: String?,
+        tags: [String]
+    ) {
+        self.tempId = tempId
+        self.type = type
+        self.title = title
+        self.details = details
+        self.dueDate = dueDate
+        self.priority = priority
+        self.project = project
+        self.tags = tags
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tempId = try container.decode(String.self, forKey: .tempId)
@@ -107,6 +127,22 @@ struct VoiceSessionDiffChanges: Codable {
         case priority
         case project
         case tags
+    }
+
+    init(
+        title: String?,
+        details: String?,
+        dueDate: Date?,
+        priority: ItemPriority?,
+        project: String?,
+        tags: [String]?
+    ) {
+        self.title = title
+        self.details = details
+        self.dueDate = dueDate
+        self.priority = priority
+        self.project = project
+        self.tags = tags
     }
 
     init(from decoder: Decoder) throws {

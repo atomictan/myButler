@@ -6,12 +6,13 @@ struct SettingsView: View {
     @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
     @AppStorage("openAIModel") private var openAIModel = "gpt-5.2"
     @AppStorage("doubaoAPIToken") private var doubaoAPIToken = ""
-    @AppStorage("doubaoModel") private var doubaoModel = "doubao-seed-1-6-lite-251015"
+    @AppStorage("doubaoModel") private var doubaoModel = "doubao-seed-2-0-mini-260215"
     @AppStorage("weeklyDigestRemindersEnabled") private var weeklyDigestRemindersEnabled = true
     @AppStorage("doubaoRealtimeAppId") private var doubaoRealtimeAppId = ""
     @AppStorage("doubaoRealtimeAccessKey") private var doubaoRealtimeAccessKey = ""
     @AppStorage("voiceSessionASRSource") private var voiceSessionASRSource = "doubao"
     @AppStorage("voiceSessionUseSpeaker") private var voiceSessionUseSpeaker = true
+    @AppStorage("voiceSessionDebugLoggingEnabled") private var voiceSessionDebugLoggingEnabled = false
     @AppStorage("voiceSessionDebugEnabled") private var voiceSessionDebugEnabled = {
         #if DEBUG
         return true
@@ -25,6 +26,8 @@ struct SettingsView: View {
     @State private var isTestingConnection = false
     @State private var isTestingDoubaoConnection = false
     @State private var testResultMessage: String?
+    @State private var shareAlertMessage: String?
+    @State private var sharePayload: SharePayload?
 
     private var providerSelection: Binding<StructuringProviderKind> {
         Binding(
@@ -94,12 +97,23 @@ struct SettingsView: View {
 
             if providerSelection.wrappedValue == .doubao {
                 Section("Doubao") {
+                    let modelPresets = [
+                        "doubao-seed-2-0-mini-260215",
+                        "doubao-seed-2-0-pro-260215",
+                        "doubao-seed-1-8-251228",
+                        "doubao-seed-1-6-lite-251015"
+                    ]
                     SecureField("API Token", text: $doubaoAPIToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     TextField("Model", text: $doubaoModel)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Picker("Preset", selection: $doubaoModel) {
+                        ForEach(modelPresets, id: \.self) { preset in
+                            Text(preset).tag(preset)
+                        }
+                    }
                     Text("Direct API tokens are for testing; use a backend proxy in production.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -141,6 +155,16 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 #endif
             }
+
+            Section("Voice Session Debug") {
+                Toggle("Save Debug Logs", isOn: $voiceSessionDebugLoggingEnabled)
+                Text("Enable this before a session to capture logs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Share Latest Logs") {
+                    shareLatestLogs()
+                }
+            }
         }
         .navigationTitle("Settings")
         .onChange(of: weeklyDigestRemindersEnabled) { _, newValue in
@@ -169,6 +193,17 @@ struct SettingsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(testResultMessage ?? "")
+        }
+        .alert("Share Logs", isPresented: Binding(
+            get: { shareAlertMessage != nil },
+            set: { _ in shareAlertMessage = nil }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(shareAlertMessage ?? "")
+        }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(items: payload.items)
         }
     }
 
@@ -218,6 +253,20 @@ struct SettingsView: View {
         }
     }
 
+    private func shareLatestLogs() {
+        let latestLogs = VoiceSessionDebugLogger.latestRunLogFiles()
+        guard !latestLogs.isEmpty else {
+            shareAlertMessage = "No recent voice session logs found yet."
+            return
+        }
+        let exported = VoiceSessionDebugLogger.exportLogsForFileSharing(urls: latestLogs)
+        guard !exported.isEmpty else {
+            shareAlertMessage = "Failed to export logs for sharing."
+            return
+        }
+        sharePayload = SharePayload(items: exported)
+    }
+
     private func testConnection() {
         isTestingConnection = true
         let apiKey = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -248,7 +297,7 @@ struct SettingsView: View {
         isTestingDoubaoConnection = true
         let apiToken = doubaoAPIToken.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = doubaoModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedModel = model.isEmpty ? "doubao-seed-1-6-lite-251015" : model
+        let resolvedModel = model.isEmpty ? "doubao-seed-2-0-mini-260215" : model
 
         Task {
             do {
@@ -271,6 +320,21 @@ struct SettingsView: View {
             }
         }
     }
+}
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private struct SharePayload: Identifiable {
+    let id = UUID()
+    let items: [Any]
 }
 
 #Preview {

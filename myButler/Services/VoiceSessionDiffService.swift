@@ -12,31 +12,40 @@ protocol VoiceSessionDiffProvider {
 
 final class VoiceSessionDiffService {
     private let provider: VoiceSessionDiffProvider
+    private let providerKind: StructuringProviderKind
     private let logger: ((String) -> Void)?
+    private let summaryBypassCharLimit = 1200
 
     init(
         providerKind: StructuringProviderKind = VoiceSessionDiffService.defaultProviderKind(),
         logger: ((String) -> Void)? = nil
     ) {
+        self.providerKind = providerKind
         provider = VoiceSessionDiffProviderFactory.make(providerKind)
         self.logger = logger
     }
 
-    func proposeDiff(transcript: String, items: [Item]) async throws -> VoiceSessionDiff {
+    func proposeDiff(transcript: String, deletionTranscript: String, items: [Item]) async throws -> VoiceSessionDiff {
         let summary: String
-        do {
-            logger?("Diff summary started")
-            summary = try await provider.summarizeTranscript(transcript)
-            logger?("Diff summary completed (chars=\(summary.count))")
-        } catch {
-            throw VoiceSessionDiffError.invalidResponse("Summary step failed: \(error.localizedDescription)")
+        if transcript.count <= summaryBypassCharLimit {
+            summary = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            logger?("Diff summary skipped (chars=\(summary.count))")
+        } else {
+            do {
+                logger?("Diff summary started")
+                summary = try await provider.summarizeTranscript(transcript)
+                logger?("Diff summary completed (chars=\(summary.count))")
+            } catch {
+                throw VoiceSessionDiffError.invalidResponse("Summary step failed: \(error.localizedDescription)")
+            }
         }
         do {
             logger?("Diff proposal started")
-            let enrichedSummary = VoiceSessionDiffPrompt.appendDeletionHints(to: summary, transcript: transcript)
+            let enrichedSummary = VoiceSessionDiffPrompt.appendDeletionHints(to: summary, transcript: deletionTranscript)
             let diff = try await provider.proposeDiff(summary: enrichedSummary, items: items)
             logger?("Diff proposal completed")
-            return diff
+            let resolvedDiff = await resolveMissingDueDates(in: diff, transcript: deletionTranscript)
+            return resolvedDiff
         } catch {
             throw VoiceSessionDiffError.invalidResponse("Diff step failed: \(error.localizedDescription)")
         }
@@ -70,7 +79,7 @@ enum VoiceSessionDiffProviderFactory {
                 return UnavailableVoiceSessionDiffProvider(name: "Doubao API token missing")
             }
             let model = UserDefaults.standard.string(forKey: "doubaoModel")?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let resolvedModel = (model?.isEmpty == false) ? model! : "doubao-seed-1-8-251228"
+            let resolvedModel = (model?.isEmpty == false) ? model! : "doubao-seed-2-0-mini-260215"
             return DoubaoVoiceSessionDiffProvider(apiToken: apiToken, model: resolvedModel)
         }
     }
@@ -125,7 +134,7 @@ struct OpenAIVoiceSessionDiffProvider: VoiceSessionDiffProvider {
                 VoiceSessionDiffChatMessage(role: "user", content: prompt)
             ],
             temperature: 0.2,
-            maxTokens: 1000
+            maxTokens: 600
         )
 
         var request = URLRequest(url: endpoint)
@@ -160,7 +169,7 @@ struct OpenAIVoiceSessionDiffProvider: VoiceSessionDiffProvider {
                 VoiceSessionDiffChatMessage(role: "user", content: prompt)
             ],
             temperature: 0.2,
-            maxTokens: 1500
+            maxTokens: 900
         )
 
         var request = URLRequest(url: endpoint)
@@ -214,7 +223,7 @@ struct DoubaoVoiceSessionDiffProvider: VoiceSessionDiffProvider {
                 VoiceSessionDiffChatMessage(role: "user", content: prompt)
             ],
             temperature: 0.2,
-            maxTokens: 1000
+            maxTokens: 600
         )
 
         var request = URLRequest(url: endpoint)
@@ -249,7 +258,7 @@ struct DoubaoVoiceSessionDiffProvider: VoiceSessionDiffProvider {
                 VoiceSessionDiffChatMessage(role: "user", content: prompt)
             ],
             temperature: 0.2,
-            maxTokens: 1500
+            maxTokens: 900
         )
 
         var request = URLRequest(url: endpoint)
@@ -291,6 +300,8 @@ enum VoiceSessionDiffPrompt {
     }
 
     static func buildDiff(summary: String, items: [Item]) -> String {
+        let referenceTimestamp = DueDateParser.referenceTimestamp()
+        let timeZoneName = TimeZone.current.identifier
         let contextItems = items.map { VoiceSessionExistingItem(item: $0) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -304,6 +315,9 @@ enum VoiceSessionDiffPrompt {
         Output JSON only, following this schema exactly. Do not include markdown.
 
         Rules:
+        - Today is \(referenceTimestamp) (timezone: \(timeZoneName)). Resolve relative dates against this reference.
+        - If the user mentions any date or time (e.g., "next Monday", "Wednesday after next week", "tomorrow 6pm"), always set "dueDate".
+        - Use ISO-8601. If time is provided, use "YYYY-MM-DDTHH:mm". If only a date is known, use "YYYY-MM-DD".
         - Do not delete items unless the user explicitly asked to remove or cancel them.
         - Use updates when modifying existing items; reference the exact id.
         - For duplicates, create a merge entry that references a create tempId and the targetId.
@@ -327,7 +341,7 @@ enum VoiceSessionDiffPrompt {
               "type": "task|idea|note",
               "title": "…",
               "details": "…",
-              "dueDate": "YYYY-MM-DDTHH:mm or null",
+              "dueDate": "YYYY-MM-DDTHH:mm or YYYY-MM-DD or null",
               "priority": "low|normal|high",
               "project": "… or null",
               "tags": ["…"]
@@ -339,7 +353,7 @@ enum VoiceSessionDiffPrompt {
               "changes": {
                 "title": "…",
                 "details": "…",
-                "dueDate": "YYYY-MM-DDTHH:mm or null",
+                "dueDate": "YYYY-MM-DDTHH:mm or YYYY-MM-DD or null",
                 "priority": "low|normal|high",
                 "project": "… or null",
                 "tags": ["…"]
@@ -419,6 +433,161 @@ enum VoiceSessionDiffPrompt {
             return String(trimmed[start...end])
         }
         return trimmed
+    }
+}
+
+private extension VoiceSessionDiffService {
+    func resolveMissingDueDates(in diff: VoiceSessionDiff, transcript: String) async -> VoiceSessionDiff {
+        let resolvedCreates = await resolveDueDates(in: diff.creates, transcript: transcript)
+        let resolvedUpdates = await resolveDueDates(in: diff.updates, transcript: transcript)
+        return VoiceSessionDiff(
+            creates: resolvedCreates,
+            updates: resolvedUpdates,
+            merges: diff.merges,
+            deletes: diff.deletes
+        )
+    }
+
+    func resolveDueDates(in creates: [VoiceSessionDiffCreate], transcript: String) async -> [VoiceSessionDiffCreate] {
+        var resolved: [VoiceSessionDiffCreate] = []
+        for create in creates {
+            let dueDate = await resolveDueDate(
+                existing: create.dueDate,
+                title: create.title,
+                details: create.details,
+                transcript: transcript,
+                itemCount: creates.count
+            )
+            resolved.append(
+                VoiceSessionDiffCreate(
+                    tempId: create.tempId,
+                    type: create.type,
+                    title: create.title,
+                    details: create.details,
+                    dueDate: dueDate,
+                    priority: create.priority,
+                    project: create.project,
+                    tags: create.tags
+                )
+            )
+        }
+        return resolved
+    }
+
+    func resolveDueDates(in updates: [VoiceSessionDiffUpdate], transcript: String) async -> [VoiceSessionDiffUpdate] {
+        var resolved: [VoiceSessionDiffUpdate] = []
+        for update in updates {
+            let dueDate = await resolveDueDate(
+                existing: update.changes.dueDate,
+                title: update.changes.title,
+                details: update.changes.details,
+                transcript: transcript,
+                itemCount: updates.count
+            )
+            let changes = VoiceSessionDiffChanges(
+                title: update.changes.title,
+                details: update.changes.details,
+                dueDate: dueDate,
+                priority: update.changes.priority,
+                project: update.changes.project,
+                tags: update.changes.tags
+            )
+            resolved.append(VoiceSessionDiffUpdate(id: update.id, changes: changes))
+        }
+        return resolved
+    }
+
+    func resolveDueDate(existing: Date?, title: String?, details: String?, transcript: String, itemCount: Int) async -> Date? {
+        let transcriptDate = extractTranscriptDueDate(
+            title: title,
+            details: details,
+            transcript: transcript,
+            itemCount: itemCount
+        )
+        if let existing {
+            if let transcriptDate, shouldOverrideDueDate(existing: existing, candidate: transcriptDate) {
+                logger?("Due date overridden from transcript")
+                return transcriptDate
+            }
+            return existing
+        }
+        if let transcriptDate {
+            return transcriptDate
+        }
+        let text = buildDueDateInput(title: title, details: details)
+        guard !text.isEmpty else { return nil }
+        if let localDate = DueDateParser.detect(in: text) {
+            return localDate
+        }
+        guard providerKind != .mock else { return nil }
+        let structuringService = StructuringService(providerKind: providerKind)
+        do {
+            let draft = try await structuringService.structure(text: text)
+            return draft.dueDate
+        } catch {
+            logger?("Due date fallback failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func buildDueDateInput(title: String?, details: String?) -> String {
+        let parts = [title, details]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.joined(separator: ". ")
+    }
+
+    func extractTranscriptDueDate(title: String?, details: String?, transcript: String, itemCount: Int) -> Date? {
+        let cleanedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedTranscript.isEmpty else { return nil }
+        let lines = cleanedTranscript.split(separator: "\n", omittingEmptySubsequences: false)
+        let normalizedLines = lines.map { normalizeTranscriptLine(String($0)) }
+        if itemCount == 1 {
+            for line in normalizedLines {
+                if let date = DueDateParser.detect(in: line) {
+                    return date
+                }
+            }
+        }
+        let tokens = extractTitleTokens(title: title, details: details)
+        guard !tokens.isEmpty else { return nil }
+        var best: (score: Int, date: Date)?
+        for line in normalizedLines {
+            let lower = line.lowercased()
+            let score = tokens.reduce(0) { count, token in
+                lower.contains(token) ? count + 1 : count
+            }
+            guard score > 0, let date = DueDateParser.detect(in: line) else { continue }
+            if best == nil || score > best!.score {
+                best = (score, date)
+            }
+        }
+        return best?.date
+    }
+
+    func normalizeTranscriptLine(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let separatorRange = trimmed.range(of: ":") else { return trimmed }
+        let prefix = trimmed[..<separatorRange.lowerBound]
+        if prefix.count <= 12 {
+            let start = trimmed.index(after: separatorRange.lowerBound)
+            return trimmed[start...].trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return trimmed
+    }
+
+    func extractTitleTokens(title: String?, details: String?) -> [String] {
+        let combined = [title, details].compactMap { $0 }.joined(separator: " ")
+        let separators = CharacterSet.alphanumerics.inverted
+        return combined
+            .lowercased()
+            .components(separatedBy: separators)
+            .filter { $0.count > 2 }
+    }
+
+    func shouldOverrideDueDate(existing: Date, candidate: Date) -> Bool {
+        let calendar = Calendar.current
+        return !calendar.isDate(existing, inSameDayAs: candidate)
     }
 }
 

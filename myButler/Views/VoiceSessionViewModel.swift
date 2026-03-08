@@ -61,10 +61,15 @@ final class VoiceSessionViewModel: ObservableObject {
     private var duplicatePromptTask: Task<Void, Never>?
     private let duplicatePromptDebounceSeconds: TimeInterval = 0.8
     private var lastDiffTranscript: String?
+    private var lastDiffFullTranscript: String?
     private var lastDiffItemsSnapshot: [Item] = []
     private var lastDiffUsedReducedContext = false
-    private let diffItemLimit = 120
-    private let diffItemLimitReduced = 50
+    private let diffItemLimit = 80
+    private let diffItemLimitReduced = 30
+    private let diffTranscriptLineLimit = 100
+    private let diffTranscriptLineLimitReduced = 50
+    private let diffTranscriptCharLimit = 4000
+    private let diffTranscriptCharLimitReduced = 2400
     private var pendingEmbeddingMetrics: PendingEmbeddingMetrics?
     private var asrSource: String {
         UserDefaults.standard.string(forKey: "voiceSessionASRSource") ?? "doubao"
@@ -208,7 +213,6 @@ final class VoiceSessionViewModel: ObservableObject {
                     self.latestRunLogFiles = runLogs
                     VoiceSessionDebugLogger.storeLatestRunLogFiles(runLogs)
                 }
-                self.debugLogger = nil
                 self.flushPendingEmbeddingMetrics(reason: "no_response")
                 self.suppressAssistantUntilUser = false
                 self.hasReceivedUserTranscript = false
@@ -219,6 +223,9 @@ final class VoiceSessionViewModel: ObservableObject {
                 self.audioService.stopAll()
             }
             await self.generateDiffProposalIfNeeded()
+            await MainActor.run {
+                self.debugLogger = nil
+            }
         }
     }
 
@@ -940,6 +947,7 @@ final class VoiceSessionViewModel: ObservableObject {
         let contexts = makeDiffContexts(transcript: trimmedTranscript, items: baseItems)
         var lastContext = contexts[0]
         lastDiffTranscript = lastContext.transcript
+        lastDiffFullTranscript = trimmedTranscript
         lastDiffItemsSnapshot = lastContext.items
         lastDiffUsedReducedContext = lastContext.isReduced
         debugLogger?.log("Diff generation started (items=\(lastContext.items.count), transcriptChars=\(lastContext.transcript.count))")
@@ -948,9 +956,10 @@ final class VoiceSessionViewModel: ObservableObject {
         })
         do {
             let start = Date()
-            let diff = try await generateDiffWithFallback(using: service, contexts: contexts, lastContext: &lastContext)
+            let diff = try await generateDiffWithFallback(using: service, contexts: contexts, lastContext: &lastContext, fullTranscript: trimmedTranscript)
             let duration = Date().timeIntervalSince(start)
             lastDiffTranscript = lastContext.transcript
+            lastDiffFullTranscript = trimmedTranscript
             lastDiffItemsSnapshot = lastContext.items
             lastDiffUsedReducedContext = lastContext.isReduced
             debugLogger?.log(String(format: "Diff generation completed in %.2fs (%@)", duration, lastContext.label))
@@ -970,6 +979,7 @@ final class VoiceSessionViewModel: ObservableObject {
             latestUserTranscript = nil
         } catch {
             lastDiffTranscript = lastContext.transcript
+            lastDiffFullTranscript = trimmedTranscript
             lastDiffItemsSnapshot = lastContext.items
             lastDiffUsedReducedContext = lastContext.isReduced
             debugLogger?.log("Diff generation failed (\(lastContext.label)): \(error.localizedDescription)")
@@ -992,6 +1002,7 @@ final class VoiceSessionViewModel: ObservableObject {
     @MainActor
     func retryDiffProposal() {
         guard let transcript = lastDiffTranscript, !transcript.isEmpty else { return }
+        let fullTranscript = lastDiffFullTranscript ?? transcript
         statusText = "Preparing Review"
         isShowingDiffError = false
         diffErrorMessage = ""
@@ -1006,11 +1017,12 @@ final class VoiceSessionViewModel: ObservableObject {
             guard let self else { return }
             do {
                 let start = Date()
-                let diff = try await self.generateDiffWithFallback(using: service, contexts: contexts, lastContext: &lastContext)
+                let diff = try await self.generateDiffWithFallback(using: service, contexts: contexts, lastContext: &lastContext, fullTranscript: fullTranscript)
                 let duration = Date().timeIntervalSince(start)
                 let normalized = self.normalizeDiff(diff, items: self.store.items)
                 await MainActor.run {
                     self.lastDiffTranscript = lastContext.transcript
+                    self.lastDiffFullTranscript = fullTranscript
                     self.lastDiffItemsSnapshot = lastContext.items
                     self.lastDiffUsedReducedContext = lastContext.isReduced
                     self.debugLogger?.log(String(format: "Diff retry completed in %.2fs (%@)", duration, lastContext.label))
@@ -1029,6 +1041,7 @@ final class VoiceSessionViewModel: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.lastDiffTranscript = lastContext.transcript
+                    self.lastDiffFullTranscript = fullTranscript
                     self.lastDiffItemsSnapshot = lastContext.items
                     self.lastDiffUsedReducedContext = lastContext.isReduced
                     self.debugLogger?.log("Diff retry failed (\(lastContext.label)): \(error.localizedDescription)")
@@ -1057,14 +1070,24 @@ final class VoiceSessionViewModel: ObservableObject {
     }
 
     private func makeDiffContexts(transcript: String, items: [Item]) -> [DiffContext] {
+        let primaryTranscript = trimTranscriptForDiff(
+            transcript,
+            lineLimit: diffTranscriptLineLimit,
+            charLimit: diffTranscriptCharLimit
+        )
+        let reducedTranscript = trimTranscriptForDiff(
+            transcript,
+            lineLimit: diffTranscriptLineLimitReduced,
+            charLimit: diffTranscriptCharLimitReduced
+        )
         let primary = DiffContext(
-            transcript: transcript,
+            transcript: primaryTranscript,
             items: trimItemsForDiff(items, limit: diffItemLimit),
             label: "full",
             isReduced: false
         )
         let reduced = DiffContext(
-            transcript: transcript,
+            transcript: reducedTranscript,
             items: trimItemsForDiff(items, limit: diffItemLimitReduced),
             label: "reduced",
             isReduced: true
@@ -1075,14 +1098,19 @@ final class VoiceSessionViewModel: ObservableObject {
     private func generateDiffWithFallback(
         using service: VoiceSessionDiffService,
         contexts: [DiffContext],
-        lastContext: inout DiffContext
+        lastContext: inout DiffContext,
+        fullTranscript: String
     ) async throws -> VoiceSessionDiff {
         var lastError: Error?
         for (index, context) in contexts.enumerated() {
             lastContext = context
             debugLogger?.log("Diff generation attempt (\(context.label)) (items=\(context.items.count), transcriptChars=\(context.transcript.count))")
             do {
-                return try await service.proposeDiff(transcript: context.transcript, items: context.items)
+                return try await service.proposeDiff(
+                    transcript: context.transcript,
+                    deletionTranscript: fullTranscript,
+                    items: context.items
+                )
             } catch {
                 lastError = error
                 if isTimeoutError(error), index < contexts.count - 1 {
@@ -1093,6 +1121,17 @@ final class VoiceSessionViewModel: ObservableObject {
             }
         }
         throw lastError ?? VoiceSessionDiffError.invalidResponse("Diff generation failed")
+    }
+
+    private func trimTranscriptForDiff(_ transcript: String, lineLimit: Int, charLimit: Int) -> String {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+        let recentLines = lines.suffix(lineLimit).joined(separator: "\n")
+        if recentLines.count <= charLimit {
+            return recentLines
+        }
+        return String(recentLines.suffix(charLimit))
     }
 
     private func trimItemsForDiff(_ items: [Item], limit: Int) -> [Item] {
@@ -1310,6 +1349,9 @@ final class VoiceSessionViewModel: ObservableObject {
     private func appendRunLog(_ url: URL) {
         guard !latestRunLogFiles.contains(url) else { return }
         latestRunLogFiles.append(url)
+        if UserDefaults.standard.bool(forKey: "voiceSessionDebugLoggingEnabled") {
+            VoiceSessionDebugLogger.storeLatestRunLogFiles(latestRunLogFiles)
+        }
     }
 
     private func writeDebugArtifactsIfNeeded(sessionTimestamp: Date?) -> [URL] {

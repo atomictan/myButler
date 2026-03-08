@@ -188,6 +188,20 @@ M10 — Voice session polish + workflow (diff-at-end review)
 - Removed Inbox “All” filter to leave To Do / Ideas / Notes only.
 - Added JSON inbox export/import with merge/replace/skip modes via Settings → Inbox Backup.
 
+## Session Notes (2026-03-03)
+- Restored Voice Session debug sharing controls in Settings (Save Debug Logs + Share Latest Logs).
+- Fixed Share Latest Logs to persist diff artifacts appended after session stop.
+- Strengthened diff prompt to resolve relative dates into `dueDate`.
+- Added remote due-date fallback for missing `dueDate` in diff results.
+
+## Session Notes (2026-03-05)
+- Trimmed diff transcript payloads to reduce review prep latency.
+- Skipped the summary API call for short transcripts to speed up diff generation.
+- Kept debug logging active through diff generation for timing visibility.
+- Added transcript-based due date validation to fix “next Tuesday” mismatches.
+- Defaulted Doubao diff model to `doubao-seed-2-0-mini-260215` for faster responses.
+- Reduced diff payload limits and max tokens to further cut proposal latency.
+
 ## Current Issues & Forward Plan (M10)
 
 ### Pain Points Observed

@@ -150,5 +150,25 @@
   - **Solution:** Accept ISO-8601 date-time in structuring/diff prompts, add a shared due-date parser, and show due time in UI/date pickers.
 - **Issue (2026-03-01 13:20):** Structuring still missed relative dates like "next Monday 12pm".
   - **Solution:** Add a local `NSDataDetector` fallback to extract due dates from the raw input text.
-- **Issue (2026-03-02 09:00):** Relative due dates ("next Monday 12pm") still not captured after fallback.
-  - **Solution:** Pending — need targeted parser or stricter prompt enforcement.
+- **Issue (2026-03-03):** Relative due dates in Voice Session diffs were still missing (e.g., "next Monday", "next next Wednesday").
+  - **Solution:** Strengthen diff prompt with reference timestamp + ISO rules and add a remote StructuringService fallback to resolve missing `dueDate` from `title/details`.
+- **Issue (2026-03-03):** Share Latest Logs missed diff artifacts created after session stop.
+  - **Solution:** Persist appended run logs (diff/snapshots) to latest-run storage as they are created.
+- **Issue (2026-03-03):** Debug logs needed clearer sharing/access guidance.
+  - **Solution:** Restore Save Debug Logs + Share Latest Logs in Settings and allow latest `~/Downloads` log access in `AGENTS.md`.
+- **Issue (2026-03-05):** Preparing the diff review took too long after long voice sessions.
+  - **Solution:** Trim diff transcript payloads (line/char limits) and skip the summary API call for short transcripts to cut latency.
+- **Issue (2026-03-05):** Diff generation timing was missing from the voice session logs.
+  - **Solution:** Keep the debug logger alive through diff generation so timing entries are recorded.
+- **Issue (2026-03-05):** “Next Tuesday 2pm” resolved to the wrong date in diff output.
+  - **Solution:** Validate due dates against transcript-derived dates and override when the day differs.
+- **Issue (2026-03-05):** Diff proposals were slow with the default Doubao model.
+  - **Solution:** Default diff generation to `doubao-seed-2-0-mini-260215` for faster responses.
+- **Issue (2026-03-05):** Diff proposals were still slow after switching models.
+  - **Solution:** Lower diff item/transcript limits and reduce max tokens for summary/diff requests.
+- **Issue (2026-03-05):** Doubao model quick-select buttons were missing in Settings.
+  - **Solution:** Restore model preset buttons in the Doubao settings section.
+- **Issue (2026-03-05):** Doubao model presets needed to be selectable via a dropdown again.
+  - **Solution:** Replace preset buttons with a Doubao model preset picker.
+- **Issue (2026-03-05):** AirDrop import script reported success but copied no files.
+  - **Solution:** Enable `null_glob`, expand variable globs with `${~pattern}`, count actual copies, and skip existing targets in `scripts/import-airdrop-logs.sh`.

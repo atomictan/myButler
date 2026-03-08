@@ -287,3 +287,17 @@ The goal is to improve duplicate detection without changing the existing diff-at
 ## Session Notes (2026-03-02)
 - Added date-time due date support in prompts and UI, plus a local `NSDataDetector` fallback for relative dates.
 - Relative phrases like “next Monday 12pm” still not reliably captured in structuring results.
+
+## Session Notes (2026-03-03)
+- Restored Voice Session debug controls in Settings, including Save Debug Logs and Share Latest Logs for upload.
+- Fixed Share Latest Logs to include diff artifacts appended after session stop.
+- Strengthened diff prompt to resolve relative dates (e.g., next Monday) into `dueDate` using current date/time.
+- Added remote due-date fallback for diff items when `dueDate` is missing.
+
+## Session Notes (2026-03-05)
+- Trimmed diff transcript payload (line/character limits) to speed up review preparation.
+- Skipped the summary API call for short transcripts to reduce latency.
+- Kept the debug logger alive through diff generation to capture timing in logs.
+- Added transcript-based due date validation to correct “next Tuesday” style mismatches.
+- Switched the default Doubao diff model to `doubao-seed-2-0-mini-260215` for faster proposals.
+- Reduced diff item/transcript limits and max tokens to cut proposal latency further.
