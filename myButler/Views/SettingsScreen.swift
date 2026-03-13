@@ -8,6 +8,7 @@ struct SettingsScreen: View {
     @AppStorage("openAIModel") private var openAIModel = "gpt-5.2"
     @AppStorage("doubaoAPIToken") private var doubaoAPIToken = ""
     @AppStorage("doubaoModel") private var doubaoModel = "doubao-seed-1-8-251228"
+    @AppStorage("doubaoDiffModel") private var doubaoDiffModel = "doubao-seed-2-0-mini-260215"
     @AppStorage("weeklyDigestRemindersEnabled") private var weeklyDigestRemindersEnabled = true
     @AppStorage("doubaoRealtimeAppId") private var doubaoRealtimeAppId = ""
     @AppStorage("doubaoRealtimeAccessKey") private var doubaoRealtimeAccessKey = ""
@@ -28,6 +29,7 @@ struct SettingsScreen: View {
     @AppStorage("weeklyDigestReminderMinute") private var weeklyDigestReminderMinute = 0
     @State private var isTestingConnection = false
     @State private var isTestingDoubaoConnection = false
+    @State private var isPreparingShareLogs = false
     @State private var activeAlert: SettingsAlert?
     @State private var logsDebugInfoURL: URL?
     @State private var sharePayload: SharePayload?
@@ -46,7 +48,51 @@ struct SettingsScreen: View {
         StructuringProviderKind(rawValue: structuringProvider) ?? .mock
     }
 
-    var body: some View {
+    @ViewBuilder
+    private var providerSections: some View {
+        AIProviderSection(providerSelection: providerSelection)
+        if currentProvider == .openAI {
+            OpenAISection(
+                openAIAPIKey: $openAIAPIKey,
+                openAIModel: $openAIModel,
+                isTestingConnection: isTestingConnection,
+                testConnection: testConnection
+            )
+        }
+        if currentProvider == .doubao {
+            DoubaoSection(
+                doubaoAPIToken: $doubaoAPIToken,
+                doubaoModel: $doubaoModel,
+                doubaoDiffModel: $doubaoDiffModel,
+                isTestingDoubaoConnection: isTestingDoubaoConnection,
+                testDoubaoConnection: testDoubaoConnection
+            )
+            DoubaoRealtimeSection(
+                doubaoRealtimeAppId: $doubaoRealtimeAppId,
+                doubaoRealtimeAccessKey: $doubaoRealtimeAccessKey
+            )
+        }
+    }
+
+    private var voiceSessionSectionView: some View {
+        VoiceSessionSection(
+            voiceSessionUseSpeaker: $voiceSessionUseSpeaker,
+            voiceSessionASRSource: $voiceSessionASRSource,
+            voiceSessionEmbeddingDuplicatesEnabled: $voiceSessionEmbeddingDuplicatesEnabled,
+            voiceSessionEmbeddingMinScore: $voiceSessionEmbeddingMinScore,
+            voiceSessionDebugEnabled: $voiceSessionDebugEnabled,
+            voiceSessionDebugLoggingEnabled: $voiceSessionDebugLoggingEnabled,
+            isPreparingShareLogs: $isPreparingShareLogs,
+            logsDebugInfoURL: $logsDebugInfoURL,
+            onDebugLogsInfo: {
+                showAlert(title: "Logs Debug", message: VoiceSessionDebugLogger.debugInfoText())
+            },
+            onGenerateDebugInfoFile: { logsDebugInfoURL = VoiceSessionDebugLogger.writeDebugInfoFile() },
+            onShareLatestLogs: shareLatestLogs
+        )
+    }
+
+    private var settingsForm: some View {
         Form {
             WeeklyDigestSection(
                 store: store,
@@ -61,96 +107,78 @@ struct SettingsScreen: View {
                 onExport: exportInbox,
                 onImport: { isShowingImportPicker = true }
             )
-            AIProviderSection(providerSelection: providerSelection)
-            if currentProvider == .openAI {
-                OpenAISection(
-                    openAIAPIKey: $openAIAPIKey,
-                    openAIModel: $openAIModel,
-                    isTestingConnection: isTestingConnection,
-                    testConnection: testConnection
-                )
-            }
-            if currentProvider == .doubao {
-                DoubaoSection(
-                    doubaoAPIToken: $doubaoAPIToken,
-                    doubaoModel: $doubaoModel,
-                    isTestingDoubaoConnection: isTestingDoubaoConnection,
-                    testDoubaoConnection: testDoubaoConnection
-                )
-                DoubaoRealtimeSection(
-                    doubaoRealtimeAppId: $doubaoRealtimeAppId,
-                    doubaoRealtimeAccessKey: $doubaoRealtimeAccessKey
-                )
-            }
-            VoiceSessionSection(
-                voiceSessionUseSpeaker: $voiceSessionUseSpeaker,
-                voiceSessionASRSource: $voiceSessionASRSource,
-                voiceSessionEmbeddingDuplicatesEnabled: $voiceSessionEmbeddingDuplicatesEnabled,
-                voiceSessionEmbeddingMinScore: $voiceSessionEmbeddingMinScore,
-                voiceSessionDebugEnabled: $voiceSessionDebugEnabled,
-                voiceSessionDebugLoggingEnabled: $voiceSessionDebugLoggingEnabled,
-                logsDebugInfoURL: $logsDebugInfoURL,
-                onDebugLogsInfo: {
-                    showAlert(title: "Logs Debug", message: VoiceSessionDebugLogger.debugInfoText())
-                },
-                onGenerateDebugInfoFile: { logsDebugInfoURL = VoiceSessionDebugLogger.writeDebugInfoFile() },
-                onShareLatestLogs: shareLatestLogs
-            )
+            providerSections
+            voiceSessionSectionView
         }
-        .navigationTitle("Settings")
-        .onChange(of: weeklyDigestRemindersEnabled) { _, newValue in
-            Task {
-                await WeeklyDigestReminder.updateSchedule(isEnabled: newValue, schedule: reminderSchedule)
-            }
-        }
-        .onChange(of: weeklyDigestReminderWeekday) { _, _ in
-            updateReminderSchedule()
-        }
-        .onChange(of: weeklyDigestReminderHour) { _, _ in
-            updateReminderSchedule()
-        }
-        .onChange(of: weeklyDigestReminderMinute) { _, _ in
-            updateReminderSchedule()
-        }
-        .overlay {
-            if isTestingConnection || isTestingDoubaoConnection {
-                ProgressView("Testing...")
-            }
-        }
-        .alert(item: $activeAlert) { alert in
-            Alert(
-                title: Text(alert.title),
-                message: Text(alert.message),
-                dismissButton: .cancel()
-            )
-        }
-        .sheet(item: $sharePayload) { payload in
-            ShareSheet(items: payload.items)
-        }
-        .fileImporter(
-            isPresented: $isShowingImportPicker,
-            allowedContentTypes: [UTType.json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                pendingImportURL = url
-                isShowingImportOptions = true
-            case .failure(let error):
-                showAlert(title: "Import Failed", message: error.localizedDescription)
-            }
-        }
-        .confirmationDialog("Import Inbox", isPresented: $isShowingImportOptions, titleVisibility: .visible) {
-            ForEach(InboxImportMode.allCases) { mode in
-                Button(mode.label) {
-                    importInbox(mode: mode)
+    }
+
+    private var configuredBody: AnyView {
+        AnyView(
+            settingsForm
+                .navigationTitle("Settings")
+                .onChange(of: weeklyDigestRemindersEnabled) { _, newValue in
+                    Task {
+                        await WeeklyDigestReminder.updateSchedule(isEnabled: newValue, schedule: reminderSchedule)
+                    }
                 }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Choose how to apply the imported items.")
-        }
+                .onChange(of: weeklyDigestReminderWeekday) { _, _ in
+                    updateReminderSchedule()
+                }
+                .onChange(of: weeklyDigestReminderHour) { _, _ in
+                    updateReminderSchedule()
+                }
+                .onChange(of: weeklyDigestReminderMinute) { _, _ in
+                    updateReminderSchedule()
+                }
+                .overlay {
+                    if isTestingConnection || isTestingDoubaoConnection {
+                        ProgressView("Testing...")
+                    }
+                }
+                .alert(item: $activeAlert) { alert in
+                    Alert(
+                        title: Text(alert.title),
+                        message: Text(alert.message),
+                        dismissButton: .cancel()
+                    )
+                }
+                .sheet(item: $sharePayload) { payload in
+                    shareSheetView(for: payload)
+                }
+                .fileImporter(
+                    isPresented: $isShowingImportPicker,
+                    allowedContentTypes: [UTType.json],
+                    allowsMultipleSelection: false
+                ) { result in
+                    switch result {
+                    case .success(let urls):
+                        guard let url = urls.first else { return }
+                        pendingImportURL = url
+                        isShowingImportOptions = true
+                    case .failure(let error):
+                        showAlert(title: "Import Failed", message: error.localizedDescription)
+                    }
+                }
+                .confirmationDialog("Import Inbox", isPresented: $isShowingImportOptions, titleVisibility: .visible) {
+                    ForEach(InboxImportMode.allCases) { mode in
+                        Button(mode.label) {
+                            importInbox(mode: mode)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Choose how to apply the imported items.")
+                }
+        )
+    }
+
+    var body: some View {
+        configuredBody
+    }
+
+    private func shareSheetView(for payload: SharePayload) -> some View {
+        AppPerformanceLogger.shared.log("Share Latest Logs sheet presented")
+        return ShareSheet(items: payload.items)
     }
 
     private var reminderSchedule: WeeklyDigestSchedule {
@@ -259,17 +287,36 @@ struct SettingsScreen: View {
     }
 
     private func shareLatestLogs() {
-        let latestLogs = VoiceSessionDebugLogger.latestRunLogFiles()
-        guard !latestLogs.isEmpty else {
+        let start = Date()
+        AppPerformanceLogger.shared.log("Share Latest Logs tapped")
+        var latestLogs = VoiceSessionDebugLogger.latestRunLogFiles()
+        latestLogs.removeAll { $0.lastPathComponent == "app-performance.log" }
+        guard !latestLogs.isEmpty || VoiceSessionDebugLogger.latestRunLogFiles().contains(where: { $0.lastPathComponent == "app-performance.log" }) else {
             showAlert(title: "Share Logs", message: "No recent voice session logs found yet.")
+            AppPerformanceLogger.shared.log("Share Latest Logs aborted: no logs")
             return
         }
-        let exported = VoiceSessionDebugLogger.exportLogsForFileSharing(urls: latestLogs)
-        guard !exported.isEmpty else {
-            showAlert(title: "Share Logs", message: "Failed to export logs for sharing.")
-            return
+        isPreparingShareLogs = true
+        Task.detached(priority: .userInitiated) {
+            var exportedLogs = VoiceSessionDebugLogger.exportLogsForFileSharing(urls: latestLogs)
+            let performanceSnapshot = await MainActor.run {
+                AppPerformanceLogger.shared.snapshotForSharing(logging: "Share Latest Logs export completed")
+            }
+            if let performanceSnapshot {
+                exportedLogs.append(contentsOf: VoiceSessionDebugLogger.exportLogsForFileSharing(urls: [performanceSnapshot]))
+            }
+            let finalExportedLogs = exportedLogs
+            await MainActor.run {
+                isPreparingShareLogs = false
+                guard !finalExportedLogs.isEmpty else {
+                    showAlert(title: "Share Logs", message: "Failed to export logs for sharing.")
+                    AppPerformanceLogger.shared.mark("Share Latest Logs export failed", since: start)
+                    return
+                }
+                AppPerformanceLogger.shared.mark("Share Latest Logs export", since: start)
+                sharePayload = SharePayload(items: finalExportedLogs)
+            }
         }
-        sharePayload = SharePayload(items: exported)
     }
 
     private func exportInbox() {
@@ -436,6 +483,7 @@ private struct OpenAISection: View {
 private struct DoubaoSection: View {
     @Binding var doubaoAPIToken: String
     @Binding var doubaoModel: String
+    @Binding var doubaoDiffModel: String
     let isTestingDoubaoConnection: Bool
     let testDoubaoConnection: () -> Void
 
@@ -447,14 +495,37 @@ private struct DoubaoSection: View {
             TextField("Model", text: $doubaoModel)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+            TextField("Review Model", text: $doubaoDiffModel)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
             Menu("Model Presets") {
                 Button("doubao-seed-2-0-pro-260215") {
                     doubaoModel = "doubao-seed-2-0-pro-260215"
+                }
+                Button("doubao-seed-2-0-mini-260215") {
+                    doubaoModel = "doubao-seed-2-0-mini-260215"
                 }
                 Button("doubao-seed-1-6-251015") {
                     doubaoModel = "doubao-seed-1-6-251015"
                 }
             }
+            Menu("Review Model Presets") {
+                Button("doubao-seed-2-0-mini-260215") {
+                    doubaoDiffModel = "doubao-seed-2-0-mini-260215"
+                }
+                Button("doubao-seed-2-0-pro-260215") {
+                    doubaoDiffModel = "doubao-seed-2-0-pro-260215"
+                }
+                Button("doubao-seed-1-6-lite-251015") {
+                    doubaoDiffModel = "doubao-seed-1-6-lite-251015"
+                }
+            }
+            Button("Use Main Model for Review") {
+                doubaoDiffModel = doubaoModel
+            }
+            Text("Review Model is used for end-of-session diff generation. You can paste any future model ID here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text("Direct API tokens are for testing; use a backend proxy in production.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -492,6 +563,7 @@ private struct VoiceSessionSection: View {
     @Binding var voiceSessionEmbeddingMinScore: Double
     @Binding var voiceSessionDebugEnabled: Bool
     @Binding var voiceSessionDebugLoggingEnabled: Bool
+    @Binding var isPreparingShareLogs: Bool
     @Binding var logsDebugInfoURL: URL?
     let onDebugLogsInfo: () -> Void
     let onGenerateDebugInfoFile: () -> Void
@@ -536,6 +608,12 @@ private struct VoiceSessionSection: View {
             Button("Share Latest Logs") {
                 onShareLatestLogs()
             }
+            .disabled(isPreparingShareLogs)
+            if isPreparingShareLogs {
+                ProgressView("Preparing logs…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Button("Debug Logs Info") {
                 onDebugLogsInfo()
             }
@@ -555,8 +633,10 @@ private struct VoiceSessionSection: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        SettingsScreen(store: ItemStore())
+struct SettingsScreen_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            SettingsScreen(store: ItemStore())
+        }
     }
 }

@@ -39,8 +39,10 @@ struct VoiceSessionLogsView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        VoiceSessionLogsView()
+struct VoiceSessionLogsView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            VoiceSessionLogsView()
+        }
     }
 }

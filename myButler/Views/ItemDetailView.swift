@@ -15,6 +15,7 @@ struct ItemDetailView: View {
     @State private var titleText: String
     @State private var itemType: ItemType
     @State private var rawTextValue: String
+    @State private var isCompleted: Bool
     @State private var isShowingDeleteConfirm = false
 
     init(item: Item, store: ItemStore) {
@@ -29,6 +30,7 @@ struct ItemDetailView: View {
         _titleText = State(initialValue: item.title)
         _itemType = State(initialValue: item.type)
         _rawTextValue = State(initialValue: item.rawText)
+        _isCompleted = State(initialValue: item.isCompleted)
     }
 
     var body: some View {
@@ -48,6 +50,7 @@ struct ItemDetailView: View {
             }
 
             Section("Metadata") {
+                Toggle("Completed", isOn: $isCompleted)
                 Picker("Type", selection: $itemType) {
                     ForEach(ItemType.allCases) { itemType in
                         Text(itemType.rawValue.capitalized)
@@ -103,6 +106,9 @@ struct ItemDetailView: View {
         }
         .onChange(of: itemType) { _, _ in
             updateType()
+        }
+        .onChange(of: isCompleted) { _, newValue in
+            store.setCompletion(id: item.id, isCompleted: newValue)
         }
         .onChange(of: rawTextValue) { _, _ in
             updateRawText()
@@ -167,6 +173,8 @@ struct ItemDetailView: View {
     }
 }
 
-#Preview {
-    ItemDetailView(item: Item(type: .note, title: "Sample", details: "Sample details"), store: ItemStore())
+struct ItemDetailView_Previews: PreviewProvider {
+    static var previews: some View {
+        ItemDetailView(item: Item(type: .note, title: "Sample", details: "Sample details"), store: ItemStore())
+    }
 }

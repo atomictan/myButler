@@ -1,5 +1,11 @@
 # Voice Session Issues & Solutions
 
+- **Issue (2026-03-13):** The in-app UI colors felt too plain and did not match the new playful pink dino branding.
+  - **Solution:** Added an app-wide UI theme setting in Settings with selectable accent colors, including a pink theme, and applied the selected tint across the app. Extended the theme with a very light background gradient wash on the main screens so the UI feels warmer without hurting readability.
+- **Issue (2026-03-12):** The app icon looked too plain and did not match the product’s more playful personality.
+  - **Solution:** Replaced the default/plain icon with a custom cute pink dino icon set, including light, dark, and tinted variants in the app asset catalog.
+- **Issue (2026-03-12):** Typed entry still routes through AI `structuring` and `proposal` even when the user already chose an explicit destination tab like `To Do`, `Ideas`, or `Notes`, which adds unnecessary friction and weakens trust in direct entry.
+  - **Solution:** Treat typed tab entry as final user intent and save directly into the selected type; implemented by passing the selected inbox filter into `AddItemView` and replacing typed `StructuringService` / `ProposedStructureView` save flow with direct `ItemStore.addItem(...)`. Voice Session remains the mandatory AI-structuring path, with optional future post-save `Review with AI` for typed items. Verified by successful local no-signing build and user confirmation that typed entry now saves immediately.
 - **Issue (2026-02-21 12:32):** Summary items request was sent while the assistant was still speaking, causing the model to respond to itself and skip the review prompt.
   - **Solution:** Delay summary item requests until output silence; suppress assistant text during summary review; use local TTS prompts; add explicit review start scheduling to avoid cooldown conflicts.
 - **Issue (2026-02-21 12:32):** Summary review prompts were not visible in logs (local TTS only).
@@ -172,3 +178,101 @@
   - **Solution:** Replace preset buttons with a Doubao model preset picker.
 - **Issue (2026-03-05):** AirDrop import script reported success but copied no files.
   - **Solution:** Enable `null_glob`, expand variable globs with `${~pattern}`, count actual copies, and skip existing targets in `scripts/import-airdrop-logs.sh`.
+- **Issue (2026-03-08):** “Preparing Review” still takes 40–60 seconds, but existing logs only show one coarse diff timing bucket.
+  - **Solution:** Add stage-level timing logs for diff prep, including provider/model, prompt/body size, request encoding, HTTP duration, response decoding, JSON parsing, and due-date fallback timing.
+- **Issue (2026-03-08):** Stage-level logs still do not separate network setup from server/model time inside the HTTP bucket.
+  - **Solution:** Add `URLSessionTaskMetrics` logging for diff/summary requests to capture DNS, connect, TLS, request send, TTFB, and download timing.
+- **Issue (2026-03-08):** The AirDrop import script did not include `voice-diff-error-*.json`, so failed diff artifacts could be missed after copying logs into the repo.
+  - **Solution:** Extend `scripts/import-airdrop-logs.sh` to copy `voice-diff-error-*.json` along with the other voice-session artifacts.
+- **Issue (2026-03-08):** Re-testing diff latency on the phone makes comparisons noisy because each spoken session changes the prompt content.
+  - **Solution:** Add `scripts/replay-diff-models.py` to replay a fixed imported session against multiple Doubao models from the shell for apples-to-apples latency measurements.
+- **Issue (2026-03-08):** It was unclear whether the slow diff review was caused by app overhead or the chosen Doubao model.
+  - **Solution:** Replay the same captured diff prompt across models and confirm `doubao-seed-2-0-pro-260215` is about 2x slower than `doubao-seed-2-0-mini-260215`, with TTFB dominating the total time.
+- **Issue (2026-03-08):** Diff review shared the same Doubao model setting as other AI features, making it inconvenient to keep review fast while experimenting with other models elsewhere.
+  - **Solution:** Add a dedicated `doubaoDiffModel` setting and UI controls so review generation defaults to `mini`, while still allowing presets or any custom future model ID.
+- **Issue (2026-03-08):** It was unclear which currently available Doubao model gives the best review latency on the real diff prompt.
+  - **Solution:** Run a fixed-input 5x shell benchmark across multiple models and rank them; `doubao-seed-1-6-lite-251015` was fastest on this prompt, followed by `doubao-seed-2-0-mini-260215`.
+- **Issue (2026-03-08):** Existing-item `details` made the diff prompt larger than necessary.
+  - **Solution:** Remove `details` from existing-item context and stop pretty-printing the item JSON; this cut the benchmark prompt by about 17% and produced modest latency gains.
+- **Issue (2026-03-08):** Long conversations can still make review prep much slower even after trimming the diff payload.
+  - **Solution:** Benchmark synthetic longer transcripts and confirm the main jump comes from crossing the 1200-char summary threshold (extra summary API call); repeated deletion hints from the full transcript also keep the diff prompt larger than needed.
+- **Issue (2026-03-08):** The current 1200-char summary threshold for diff generation is too aggressive.
+  - **Solution:** Compare the same long transcripts with and without summary and confirm that even around ~1.8k to ~3.2k transcript chars, skipping summary is still much faster; raise the threshold substantially or disable summary for the diff path.
+- **Issue (2026-03-08):** It was unclear whether summary might become worthwhile again for extremely large transcripts.
+  - **Solution:** Benchmark a 20k-char synthetic transcript and confirm the no-summary path is still much faster on the mini model, so summary remains a poor latency tradeoff for the current diff workflow.
+- **Issue (2026-03-08):** The diff path still used a 1200-char summary threshold even though benchmarks showed summary is slower than direct diff generation, including at 20k chars.
+  - **Solution:** Raise the diff-summary bypass threshold to `100000` chars so the current review flow effectively skips summary for normal workloads.
+- **Issue (2026-03-08):** Duplicate callouts could be missed when the user’s intent was split across multiple short ASR fragments (for example, flight + reminder + date + time in separate chunks).
+  - **Solution:** Change live duplicate detection to match against a rolling buffer of recent user utterances instead of a single utterance fragment.
+- **Issue (2026-03-08):** A successful diff HTTP response could still fail to parse when the model returned slight schema drift such as numeric `priority` values or omitted `details`.
+  - **Solution:** Make diff decoding tolerant of numeric `priority` and missing `details`, and log a raw diff content snippet when parsing fails.
+- **Issue (2026-03-08):** The first app launch and first “Share Latest Logs” action could stall the UI for several seconds.
+  - **Solution:** Defer `LocalEmbeddingIndex` initialization until first duplicate-matching use, and move log export/copy work off the main thread while showing a lightweight preparation spinner.
+- **Issue (2026-03-08):** Startup and first-tap UI stalls were hard to diagnose because we had no timing log outside voice-session internals.
+  - **Solution:** Add `app-performance.log` to record launch, first appear, store load, embedding-index init, share-button tap, export completion, and share-sheet presentation timings, and include it when sharing latest logs.
+- **Issue (2026-03-08):** The AirDrop import script did not copy `app-performance.log`, so new startup/share timing data could be missed when analyzing logs in-repo.
+  - **Solution:** Extend `scripts/import-airdrop-logs.sh` to import `app-performance.log` alongside the existing voice-session artifacts.
+- **Issue (2026-03-08):** Session context was nearly exhausted before the remaining packaging/build verification could be completed.
+  - **Solution:** Record a restart handoff in `PLAN.md` and `docs/voice-session.md` capturing completed work, current build status, and the next recommended step.
+- **Issue (2026-03-08):** Xcode still showed Swift 6 build warnings in both Settings screens after the log-sharing work landed.
+  - **Solution:** Reproduce the build with `xcodebuild`, trace the warnings to `Task.detached` calling a default-`MainActor` logger helper, and mark `VoiceSessionDebugLogger.exportLogsForFileSharing(urls:)` as `nonisolated` so the background export stays off the main actor.
+- **Issue (2026-03-08):** Exported AirDrop logs for the newest runs still omit `app-performance.log`, blocking direct analysis of startup and “Share Latest Logs” stalls.
+  - **Solution:** Preserve or recreate `app-performance.log` after `VoiceSessionDebugLogger.clearAllLogs()` so launch/share timing survives voice-session log rotation and is included in exported diagnostics.
+- **Issue (2026-03-08):** Diff due-date correction can stay wrong when the user says a spoken ordinal such as `April fifteenth`.
+  - **Solution:** Do not rely only on `NSDataDetector`; add normalization for spoken ordinals/number words and prefer correction phrases like `use`, `change`, `instead`, or the last relevant user utterance over earlier assistant lines that mention stale dates.
+- **Issue (2026-03-08):** Re-sharing the latest logs can appear to succeed while only exporting duplicate copies of the same voice-session artifacts, with no `app-performance.log` included.
+  - **Solution:** Ensure the performance log survives voice-session cleanup and verify `latestRunLogFiles()` includes it before presenting the share sheet; otherwise the shared payload remains incomplete even after repeated exports.
+- **Issue (2026-03-08):** Startup still felt slow because `ItemStore` loaded and decoded `items.json` on the main actor during app initialization.
+  - **Solution:** Move initial store file I/O and decode work into a detached task, then publish the loaded items back on the main actor after launch.
+- **Issue (2026-03-08):** `app-performance.log` could disappear mid-run because voice-session cleanup deleted every file in the logs directory, and later performance writes silently failed.
+  - **Solution:** Skip `app-performance.log` in `VoiceSessionDebugLogger.clearAllLogs()` and make `AppPerformanceLogger` recreate the file automatically before each append if needed.
+- **Issue (2026-03-08):** Diff due-date correction preferred stale earlier transcript dates and failed to understand spoken ordinals such as `april fifteenth` or spaced ASR fragments like `April 1 5 th`.
+  - **Solution:** Normalize spoken/spaced ordinal dates before detection and rank transcript date candidates so late user correction lines outrank earlier assistant lines.
+- **Issue (2026-03-08):** Exported performance logs now survive sharing, but the shared `app-performance.log` snapshot still stops at `Share Latest Logs tapped`, which makes the share flow look stalled in the exported evidence.
+  - **Solution:** Log share completion/sheet-presentation to a separate file after export, or append those timing markers before copying `app-performance.log` into the share payload.
+- **Issue (2026-03-08):** After moving `ItemStore` loading off the main actor, app startup still takes about `5.6s` before `ContentView first appear`, so the store load was not the only startup bottleneck.
+  - **Solution:** Add more startup timing markers around root view construction, `VoiceSessionView` / view-model initialization, and any audio/session setup that occurs before first paint.
+- **Issue (2026-03-08):** Duplicate/similar flight items were still not called out in the latest run even though the inbox already contained related Shanghai→San Francisco flight tasks.
+  - **Solution:** Tighten similar-item detection/ranking so related travel items surface both in assistant callouts and in end-of-session diff proposals as merge/update candidates, not only exact duplicates.
+- **Issue (2026-03-08):** Startup timing still had a blind spot between app init and first paint even after moving `ItemStore` load off the main actor.
+  - **Solution:** Add extra performance markers around `VoiceSessionView` and `VoiceSessionViewModel` init / first appear so the next shared logs isolate the remaining startup cost.
+- **Issue (2026-03-08):** Shared performance logs stopped too early because `app-performance.log` was copied before export-complete timing markers were appended.
+  - **Solution:** Create and share a dedicated `app-performance-share-*.log` snapshot after writing the export-complete marker.
+- **Issue (2026-03-08):** Similar-item matching remained too weak for travel tasks with the same route but different wording.
+  - **Solution:** Add route-aware (`from ... to ...`) similarity scoring and pass heuristic similar-item hints into the diff prompt in addition to the live duplicate prompt path.
+- **Issue (2026-03-08):** The latest run still created a new Shanghai→San Francisco flight task even though an almost identical flight item already existed for the previous day.
+  - **Solution:** Increase duplicate sensitivity for same-route travel items and bias the diff path toward `update`/`merge` when title and route are the same but only the date/time differs.
+- **Issue (2026-03-08):** The new exported performance snapshot did not appear in the imported repo logs.
+  - **Solution:** Extend `scripts/import-airdrop-logs.sh` to import `app-performance-share-*.log` alongside `app-performance.log` so share-completion timing can be analyzed after AirDrop.
+- **Issue (2026-03-08):** Even after stronger prompt hints, the model could still return a duplicate `create` for a same-route flight item that should likely update an existing nearby travel task.
+  - **Solution:** Add a post-diff normalization step that rewrites same-route, near-date task creates into updates against the closest existing matching task before presenting the review UI.
+- **Issue (2026-03-08):** We could not confirm whether the new share-performance snapshot actually captured completion timing after export.
+  - **Solution:** Re-import and verify `app-performance-share-*.log`; it now includes `Share Latest Logs export completed`, confirming the snapshot-based share timing path works.
+- **Issue (2026-03-08):** Even with store loading moved off the main actor, the new performance snapshot shows `VoiceSessionViewModel init` and `VoiceSessionView first appear` still lag several seconds behind `ContentView first appear`.
+  - **Solution:** Investigate the voice-tab initialization path next (view-model setup, provider/audio/session dependencies, and any SwiftUI tab construction behavior) since that is now the clearest remaining startup hotspot.
+- **Issue (2026-03-08):** Voice-tab startup likely still paid for eager audio-engine object creation before the user even started a session.
+  - **Solution:** Make `RealtimeAudioService` lazy in `VoiceSessionViewModel`, and make its heavy AVFoundation members lazy as well so audio setup happens on first session use instead of tab startup.
+- **Issue (2026-03-08):** After the lazy-audio change, `RealtimeAudioService init` moved off startup as intended, but `ContentView first appear` is still around `+8s` on the latest run.
+  - **Solution:** Continue tracing non-audio startup work on the root/voice-tab path; audio-service eager init was only one contributor, not the whole problem.
+- **Issue (2026-03-08):** Diff latency became very high again once the conversation included duplicate callout and merge discussion.
+  - **Solution:** Revisit diff prompt size/contents for duplicate-heavy sessions, because the richer transcript appears to push the same model back into long TTFB territory.
+- **Issue (2026-03-08):** The flight duplicate scenario now works better, but the model still returns a `create` plus `merge` plus `delete` bundle instead of a simpler direct update.
+  - **Solution:** Keep the post-diff normalization in place and consider a future simplification pass that collapses obvious create+merge patterns into a single update before presenting review.
+- **Issue (2026-03-08):** Deleting finished items loses potentially useful historical context, but keeping them visually identical to active items makes the inbox harder to triage.
+  - **Solution:** Add a persisted completion state with explicit UI toggle and strike-through styling, keep completed items searchable/history-preserving, and exclude them from Today-style active work lists.
+- **Issue (2026-03-08):** Once completed items were preserved, Inbox needed a way to stay focused without hiding history permanently.
+  - **Solution:** Hide completed items by default in Inbox and add a `Show Completed` toggle for optional reveal.
+- **Issue (2026-03-08):** In the latest run, the live assistant still failed to proactively call out a similar flight item even though the diff path later merged it.
+  - **Solution:** Keep improving the live duplicate-prompt path; the post-diff normalization is a useful backstop, but the assistant should surface the duplicate earlier in the conversation.
+- **Issue (2026-03-08):** Due-time parsing is still wrong for `1 pm`; the latest diff stored `2026-04-11T04:00:00Z` instead of the expected `05:00:00Z` for UTC+8.
+  - **Solution:** Revisit transcript time parsing/normalization for spoken times so `one pm` is converted consistently before diff due-date resolution.
+- **Issue (2026-03-08):** The reported first-attempt voice-session audio failure is not diagnosable from current shared logs because the imported bundle only contains the later successful session and no explicit start-failure/audio-error markers.
+  - **Solution:** Add explicit performance/debug logs around start-button tap, permission checks, provider connect, audio-session activation, capture start, playback start, and any thrown errors before the session logger is fully active.
+- **Issue (2026-03-08):** Spoken `1 pm` times could still resolve to the wrong hour when transcript wording placed route text between the date and time, causing `NSDataDetector` to separate them.
+  - **Solution:** Normalize spoken hour words like `one pm` and combine separate date-only and time-only matches into a single resolved `Date` before diff due-date override logic runs.
+- **Issue (2026-03-08):** After adding persisted completion state, the assistant still read completed items back when asked about the inbox.
+  - **Solution:** Filter completed items out of assistant-facing context, duplicate matching, and diff item snapshots while keeping them stored for history/search.
+- **Issue (2026-03-08):** The first attempt to start a voice session could fail silently (no assistant audio and no user capture), and previous logs did not show where startup failed.
+  - **Solution:** Added early performance/startup phase logs around provider setup, permissions, ASR start, capture start, playback start, and startup failure; next session should verify these markers with a fresh failing/succeeding run.
+- **Issue (2026-03-08):** Spoken `1 pm` due times were previously off by one hour in diff output.
+  - **Solution:** Added spoken-hour normalization and date+time match combining in `DueDateParser`; next session should verify the fix with a fresh on-device example.

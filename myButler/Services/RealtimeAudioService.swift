@@ -3,9 +3,9 @@ import Speech
 
 @MainActor
 final class RealtimeAudioService {
-    private let engine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
-    private let speechRecognizer = SFSpeechRecognizer()
+    private lazy var engine = AVAudioEngine()
+    private lazy var playerNode = AVAudioPlayerNode()
+    private lazy var speechRecognizer = SFSpeechRecognizer()
     private var inputFormat: AVAudioFormat?
     private var captureFormat: AVAudioFormat?
     private var playbackFormat: AVAudioFormat?
@@ -16,6 +16,10 @@ final class RealtimeAudioService {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var speechAuthorized = false
     private var transcriptionHandler: ((String) -> Void)?
+
+    init() {
+        AppPerformanceLogger.shared.log("RealtimeAudioService init")
+    }
 
     func requestRecordPermission() async -> Bool {
         await withCheckedContinuation { continuation in

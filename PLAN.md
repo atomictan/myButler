@@ -105,9 +105,36 @@ One unified object with a type:
   - Tasks default to `task` type with `Normal` priority and empty due date unless explicitly provided.
 - Verify Doubao ASR transcript in-device sessions.
 - Trim debug UI for production polish.
+- Align typed entry UX with explicit user intent:
+  - Typed entry from `To Do`, `Ideas`, and `Notes` tabs saves directly without mandatory AI structuring/proposal.
+  - Respect the selected tab as the saved item type; allow lightweight metadata parsing without type switching.
+  - Keep full AI structuring/proposal as the default flow for Voice Session only.
 
 ## Current Milestone
 M10 — Voice session polish + workflow (diff-at-end review)
+
+## Product Direction (2026-03-12)
+- Treat typed tab entry as explicit user intent: if the user enters from `To Do`, `Ideas`, or `Notes`, save directly into that type.
+- Remove mandatory pre-save `structuring` / `proposal` for typed tab entry.
+- Allow only lightweight typed-save enrichment:
+  - derive `title`
+  - preserve `rawText`
+  - parse confident `dueDate` / explicit `priority` for `task` items
+- Do not auto-reclassify typed tab entry into another type.
+- Keep `Voice Session` as the primary `Smart Add` surface with AI structuring, duplicate handling, and review.
+- Optional future enhancement: add post-save `Review with AI` actions for typed items rather than blocking save.
+- Implementation status:
+  - `InboxView` now passes the selected filter type into `AddItemView`.
+  - `AddItemView` now saves typed entries directly into the selected type without calling `StructuringService` or showing `ProposedStructureView`.
+  - `VoiceCaptureView` remains on the AI structuring/proposal path.
+  - Repo-local no-signing `xcodebuild` validation succeeded after the change.
+  - User validated on-device/in-app behavior: typed entry now saves immediately after item entry as intended.
+
+## Visual Polish (2026-03-12)
+- Replaced the plain app icon with a custom cute pink dino icon set.
+- Added light, dark, and tinted `1024x1024` icon assets in `myButler/Assets.xcassets/AppIcon.appiconset`.
+- Added a selectable UI color theme in Settings, with `Pink` included as one of the app-wide accent options.
+- Extended the selected theme with a soft background wash across the main screens so the app feels more branded without becoming overly saturated.
 
 ## Definition of Done (M5)
 - Transcript/text sends prompt to structuring service
@@ -125,6 +152,56 @@ M10 — Voice session polish + workflow (diff-at-end review)
 - OpenAI works after API key + model set in Settings.
 - Doubao still failing: ATS overrides added, but device reports TLS/DNS errors.
 - Need confirmed Doubao base URL/hostname for the account/region.
+
+## Session Notes (2026-03-08)
+- Reproduced the current Xcode build locally with `xcodebuild` using repo-local derived data.
+- Fixed Swift 6 concurrency warnings in log sharing by making `VoiceSessionDebugLogger.exportLogsForFileSharing(urls:)` nonisolated, so `Task.detached` does not hop back to the main actor.
+- Current CLI build is green; remaining non-app warning is the Xcode `AppIntents` metadata skip message because the target does not use `AppIntents.framework`.
+- Imported the latest AirDrop logs and analyzed the newest run (`20260308-213520`) for startup/share slowness and due-date mismatch.
+- The current latest logs do not include `app-performance.log`, so startup/share latency cannot be measured from exported device traces yet.
+- Root causes identified in code/log correlation: `VoiceSessionDebugLogger.clearAllLogs()` deletes `app-performance.log` during voice-session start, and transcript due-date extraction misreads spoken `April fifteenth` corrections.
+- Re-imported after another device share; the new files were just Finder/AirDrop duplicates (`* 2`) of the same `20260308-213520` session artifacts, still without `app-performance.log`.
+- Fixed the missing performance-log root cause by preserving `app-performance.log` during voice-session cleanup and recreating it on write if it was deleted.
+- Reduced startup work on the main actor by moving `ItemStore` disk load off the launch path and applying the loaded items back on the main actor.
+- Fixed transcript due-date extraction to normalize spoken ordinals (`april fifteenth`, `April 1 5 th`) and prefer late correction-style user lines over stale earlier mentions.
+- Rebuilt with `xcodebuild`; only the existing Xcode App Intents metadata warning remains.
+- Imported a fresh post-fix device log set (`20260308-215907`) and confirmed `app-performance.log` is now exported alongside the voice-session log.
+- Latest run shows due-date extraction is fixed for spoken ordinals: the diff now creates a flight task for `2026-04-16`, matching the transcript’s `april sixteenth` request.
+- Startup is improved structurally but still slow in practice: `ContentView first appear` is at `+5.631s`, while `ItemStore load` completes in the background at `+11.815s`, so another uninstrumented startup cost remains before first paint.
+- Share-log timing is only partially visible in the exported performance log because the copied `app-performance.log` snapshot is taken before the later `export completed` / `sheet presented` log lines are appended.
+- Duplicate/similar-item handling still missed this run: despite existing Shanghai→San Francisco flight items, the assistant did not call out similarity and the diff proposed a brand-new task instead of a merge/update candidate.
+- Added more startup instrumentation around `VoiceSessionView` and `VoiceSessionViewModel` initialization/first appearance so the remaining pre-first-paint delay can be localized on the next device run.
+- Changed log sharing to export a dedicated `app-performance-share-*.log` snapshot that is written after the export-complete marker, so the shared bundle captures later share timing instead of a stale pre-export copy.
+- Strengthened similar-item heuristics for live duplicate prompts and diff generation with route-aware matching (`from X to Y`) plus token-overlap hints passed into the diff prompt.
+- Rebuilt after these follow-up fixes; only the existing Xcode App Intents metadata warning remains.
+- Imported a fresh run (`20260308-221239`): due date/time parsing is now correct for `April seventeenth one pm`, but duplicate handling still failed and created a second Shanghai→San Francisco flight item instead of surfacing a merge/update.
+- The new share-performance snapshot is still not visible in `logs/airdrop`; the current import script only copies `app-performance.log`, not `app-performance-share-*.log`, so exported share-completion timing is still missing from repo analysis.
+- Extended `scripts/import-airdrop-logs.sh` to import `app-performance-share-*.log` snapshots.
+- Added post-diff normalization that converts near-date same-route task creates into updates against an existing matching travel item, biasing the review flow toward update/merge instead of duplicate creation.
+- Rebuilt after these changes; only the existing Xcode App Intents metadata warning remains.
+- Verified the new imported performance snapshot `app-performance-share-20260308-221353.log`; it now captures `Share Latest Logs export completed`, so share completion timing is visible in repo logs.
+- The snapshot also localizes more startup cost: `ContentView first appear` happens at about `+6.0s`, but `VoiceSessionViewModel init` is delayed until about `+10.2s` and `VoiceSessionView first appear` until about `+11.5s`, pointing to remaining startup latency in the voice-tab/view-model path rather than the store load alone.
+- Multiple later `VoiceSessionView init` entries appear during session/review/share flow, so view-init logging is useful for sequencing but noisy for counting unique view constructions.
+- Deferred `RealtimeAudioService` creation by making it lazy in `VoiceSessionViewModel`, and made the audio engine/player/speech recognizer lazy inside `RealtimeAudioService` so voice-tab startup no longer pays audio-engine setup before the user starts a session.
+- Added `RealtimeAudioService init` timing logs so the next device run can confirm audio setup moved from startup to session start.
+- Verified on fresh run `20260308-222659` that `RealtimeAudioService init` now happens at `+24.497s`, well after startup and just before the session starts, so audio-service eager init is no longer on the startup path.
+- Duplicate handling is now materially better for the flight case: the assistant called out a similar reminder during the conversation, and the diff produced an update+merge+delete flow that left a single Shanghai→San Francisco flight item dated `2026-04-18`.
+- Startup first paint is still not good (`ContentView first appear` at about `+8.062s`), so deferring audio-service creation helped target the right path but did not solve the remaining startup latency.
+- Diff latency regressed on this run to about `43.9s` TTFB-dominated, likely because the longer duplicate/merge conversation increased prompt size and model latency again.
+- Added persisted completion state to `Item` with UI toggles, strike-through styling, and Today-view exclusion for completed items.
+- Completed items are now retained instead of deleted, which keeps historical context searchable while removing them from the main “Today” action surface.
+- Added an Inbox-level `Show Completed` toggle so completed items stay hidden by default but can still be revealed when needed.
+- Latest shared run `20260308-224720` confirms completion UI is working, and same-route diff normalization now updates the existing flight item instead of creating a duplicate.
+- The assistant still did not proactively call out the similar flight during the live conversation in this run; only the diff path merged it afterward.
+- The due date day is correct, but the due time is wrong by one hour for `1 pm` (`2026-04-11T04:00:00Z` instead of `05:00:00Z`).
+- First-time voice-session failure is not clearly captured in the current logs: the imported bundle only shows the later successful session, while many `VoiceSessionView init` entries appear earlier with no corresponding session-start or audio-error markers.
+- Diff latency remained very high again on this run (~56.9s, dominated by TTFB).
+- Added phase-level performance logs for voice-session startup (`start tapped`, provider setup, provider connect, permissions, ASR setup/start, audio capture start, playback start, initial greeting request, and start failure) so first-attempt failures are captured before the session logger becomes available.
+- Improved spoken time normalization in `DueDateParser` for phrases like `one pm`, and added date+time match combining so transcripts with route text between date and time can still resolve the intended hour correctly.
+- Rebuilt after these changes; only the existing Xcode App Intents metadata warning remains.
+- Excluded completed items from assistant-facing inbox/history context, duplicate matching, and diff item snapshots so voice answers only reflect active items.
+- Confirmed on the latest manual check that the assistant no longer mentions completed items.
+- Pending for next session: verify first-attempt voice-session audio failure with the new early startup logs, and verify whether spoken `1 pm` time parsing is now fixed in a fresh device run.
 
 ## Session Notes (2026-01-28)
 - Doubao endpoint updated to `https://ark.cn-beijing.volces.com/api/v3/chat/completions`.
@@ -201,6 +278,46 @@ M10 — Voice session polish + workflow (diff-at-end review)
 - Added transcript-based due date validation to fix “next Tuesday” mismatches.
 - Defaulted Doubao diff model to `doubao-seed-2-0-mini-260215` for faster responses.
 - Reduced diff payload limits and max tokens to further cut proposal latency.
+
+## Session Notes (2026-03-08)
+- Added fine-grained diff-prep timing logs for prompt sizing, request encoding, HTTP time, response decoding, JSON parsing, and due-date fallback.
+- Next debug step is a real iPhone run to capture where “Preparing Review” time is actually spent.
+- Added `URLSessionTaskMetrics` logging for diff/summary requests to split DNS/connect/TLS/request/TTFB/download timing.
+- Added `scripts/replay-diff-models.py` to replay a fixed imported voice-session case against multiple Doubao models for apples-to-apples latency comparison from the shell.
+- Replayed the same captured diff prompt against Doubao models; `doubao-seed-2-0-mini-260215` averaged ~5.0s vs `doubao-seed-2-0-pro-260215` ~10.2s, confirming model TTFB is the main bottleneck.
+- Added a dedicated Doubao review-model setting so end-of-session diff generation defaults to `doubao-seed-2-0-mini-260215` without changing the main chat model.
+- Ran a 5x repeated shell benchmark on the same captured prompt: `doubao-seed-1-6-lite-251015` averaged ~4.8s, `doubao-seed-2-0-mini-260215` ~5.6s, `doubao-seed-1-8-251228` ~6.7s, and `doubao-seed-2-0-pro-260215` ~10.6s.
+- Trimmed the diff prompt by removing existing-item `details` and compacting item JSON; benchmark prompt shrank from ~6117 to ~5061 chars, with modest latency gains (~6–10% on most tested models).
+- Synthetic conversation-length benchmarks on `doubao-seed-2-0-mini-260215` show the main jump happens once transcript length crosses the 1200-char summary threshold: review prep rises from ~5s to ~14–16s because of the extra summary call.
+- Direct long-transcript comparison on `doubao-seed-2-0-mini-260215` shows the current 1200-char summary threshold is too low: even at ~1772 and ~3230 transcript chars, skipping summary was still much faster (~5.4–5.6s) than using summary (~12.6–14.2s).
+- A 20k-char synthetic transcript still favored the no-summary path on `doubao-seed-2-0-mini-260215`: no-summary averaged ~5.36s despite a ~40.6k-char diff prompt, while summary averaged ~15.24s.
+- Raised the diff-summary bypass threshold to `100000` chars so current review generation effectively skips the summary step; benchmarks showed summary remained a latency loss even at ~20k transcript chars.
+- Improved live duplicate detection to use a rolling buffer of recent user utterances instead of matching only a single ASR fragment, which helps catch duplicates when intent is split across multiple short speech chunks.
+- Hardened diff decoding to tolerate numeric `priority` values and missing `details`, and added raw content snippet logging on parse failures for faster diagnosis.
+- Deferred `LocalEmbeddingIndex` initialization until it is actually needed and moved debug-log export off the main thread to reduce first-launch and first-share UI stalls.
+- Added `app-performance.log` with launch/share timing markers and included it in shared latest-log bundles for future startup/UI-latency debugging.
+
+## Restart Handoff (2026-03-08)
+- Diff review speed work completed:
+  - Added stage-level diff timing logs, HTTP metrics, and shell replay benchmarking.
+  - Benchmarked multiple Doubao models; `1-6-lite` was fastest on tested prompts, `2-0-pro` slowest.
+  - Added dedicated `doubaoDiffModel` setting and UI.
+  - Removed existing-item `details` from diff context and compacted item JSON.
+  - Raised diff summary bypass threshold to `100000` chars after benchmarks showed summary is slower even at ~20k chars.
+- Reliability work completed:
+  - Live duplicate detection now uses a rolling recent-user buffer instead of one ASR fragment.
+  - Diff decoding now tolerates numeric `priority` and missing `details`, and logs raw content snippets on parse failure.
+- Startup/share responsiveness work completed:
+  - Deferred `LocalEmbeddingIndex` initialization.
+  - Moved Share Latest Logs export off the main thread and added `Preparing logs…` UI.
+  - Added `app-performance.log` and included it in latest-log sharing/import.
+- Build verification status:
+  - Fixed Swift type-check issues in `SettingsScreen.swift` and `SettingsView.swift` by splitting large view expressions.
+  - Replaced all `#Preview` macros with `PreviewProvider` to avoid sandbox preview-plugin failures.
+  - Latest sandbox `xcodebuild` no longer fails on Swift compile errors; current remaining failure is packaging/codesign: `resource fork, Finder information, or similar detritus not allowed` on the built app bundle.
+- Suggested next step after restart:
+  - Clean the build products / detritus causing the codesign failure and rerun `xcodebuild`.
+  - Then validate on-device whether duplicate reminder callout now triggers and whether first-share/startup responsiveness improved, using `app-performance.log`.
 
 ## Current Issues & Forward Plan (M10)
 

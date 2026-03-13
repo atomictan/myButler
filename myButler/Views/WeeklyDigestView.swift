@@ -73,6 +73,7 @@ struct WeeklyDigestView: View {
                 }
             }
         }
+        .themedScrollableBackground()
         .navigationTitle("Weekly Digest")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -137,15 +138,21 @@ struct WeeklyDigestView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(item.title)
                 .font(.headline)
+                .strikethrough(item.isCompleted)
+                .foregroundStyle(item.isCompleted ? .secondary : .primary)
             if !item.details.isEmpty {
                 Text(item.details)
                     .font(.subheadline)
+                    .strikethrough(item.isCompleted)
                     .foregroundStyle(.secondary)
             }
             Text(item.type.rawValue.capitalized)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
+                if item.isCompleted {
+                    Text("Completed")
+                }
                 Text(item.priority.label)
                 if let dueDate = item.dueDate {
                     Text("Due \(Item.dueDateDisplay(dueDate))")
@@ -165,8 +172,10 @@ struct WeeklyDigestView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        WeeklyDigestView(store: ItemStore())
+struct WeeklyDigestView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            WeeklyDigestView(store: ItemStore())
+        }
     }
 }

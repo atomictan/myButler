@@ -56,6 +56,9 @@ final class VoiceSessionDebugLogger {
         guard let directory = logsDirectoryURL() else { return }
         let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         for url in urls {
+            if url.lastPathComponent == "app-performance.log" {
+                continue
+            }
             try? FileManager.default.removeItem(at: url)
         }
     }
@@ -93,7 +96,7 @@ final class VoiceSessionDebugLogger {
         _ = exportLogsForFileSharing()
     }
 
-    static func exportLogsForFileSharing(urls: [URL]) -> [URL] {
+    nonisolated static func exportLogsForFileSharing(urls: [URL]) -> [URL] {
         guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return []
         }
@@ -140,7 +143,14 @@ final class VoiceSessionDebugLogger {
 
     static func latestRunLogFiles() -> [URL] {
         let paths = UserDefaults.standard.stringArray(forKey: latestRunLogPathsKey) ?? []
-        return paths.map { URL(fileURLWithPath: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+        var urls = paths.map { URL(fileURLWithPath: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+        if let logsDirectory = logsDirectoryURL() {
+            let performanceLogURL = logsDirectory.appendingPathComponent("app-performance.log")
+            if FileManager.default.fileExists(atPath: performanceLogURL.path), !urls.contains(performanceLogURL) {
+                urls.append(performanceLogURL)
+            }
+        }
+        return urls
     }
 
     static func debugInfoText() -> String {

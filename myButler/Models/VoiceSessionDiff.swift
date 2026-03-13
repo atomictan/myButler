@@ -86,9 +86,9 @@ struct VoiceSessionDiffCreate: Codable, Identifiable {
         tempId = try container.decode(String.self, forKey: .tempId)
         type = ItemType(rawValue: try container.decode(String.self, forKey: .type)) ?? .note
         title = try container.decode(String.self, forKey: .title)
-        details = try container.decode(String.self, forKey: .details)
+        details = try container.decodeIfPresent(String.self, forKey: .details) ?? ""
         dueDate = VoiceSessionDiffDecode.date(from: try container.decodeIfPresent(String.self, forKey: .dueDate))
-        priority = VoiceSessionDiffDecode.priority(from: try container.decodeIfPresent(String.self, forKey: .priority)) ?? .normal
+        priority = try VoiceSessionDiffDecode.priority(from: container, forKey: .priority) ?? .normal
         project = try container.decodeIfPresent(String.self, forKey: .project)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
     }
@@ -150,7 +150,7 @@ struct VoiceSessionDiffChanges: Codable {
         title = try container.decodeIfPresent(String.self, forKey: .title)
         details = try container.decodeIfPresent(String.self, forKey: .details)
         dueDate = VoiceSessionDiffDecode.date(from: try container.decodeIfPresent(String.self, forKey: .dueDate))
-        priority = VoiceSessionDiffDecode.priority(from: try container.decodeIfPresent(String.self, forKey: .priority))
+        priority = try VoiceSessionDiffDecode.priority(from: container, forKey: .priority)
         project = try container.decodeIfPresent(String.self, forKey: .project)
         tags = try container.decodeIfPresent([String].self, forKey: .tags)
     }
@@ -179,5 +179,22 @@ private enum VoiceSessionDiffDecode {
         default:
             return .normal
         }
+    }
+
+    static func priority<Key: CodingKey>(from container: KeyedDecodingContainer<Key>, forKey key: Key) throws -> ItemPriority? {
+        if let stringValue = try container.decodeIfPresent(String.self, forKey: key) {
+            return priority(from: stringValue)
+        }
+        if let intValue = try container.decodeIfPresent(Int.self, forKey: key) {
+            switch intValue {
+            case ItemPriority.low.rawValue:
+                return .low
+            case ItemPriority.high.rawValue:
+                return .high
+            default:
+                return .normal
+            }
+        }
+        return nil
     }
 }

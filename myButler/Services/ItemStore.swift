@@ -14,10 +14,18 @@ final class ItemStore: ObservableObject {
 
     // Location of the JSON file in the app's Documents folder.
     private let fileURL: URL
+    private var hasCompletedInitialLoad = false
+    private var hasMutatedBeforeInitialLoad = false
 
     init(fileURL: URL? = nil) {
+        let start = Date()
         self.fileURL = fileURL ?? Self.defaultFileURL()
-        load()
+        AppPerformanceLogger.shared.mark("ItemStore init", since: start)
+        Task { [weak self, fileURL = self.fileURL] in
+            guard let self else { return }
+            let (loadedItems, shouldSeed) = await Self.loadItems(from: fileURL)
+            self.finishInitialLoad(loadedItems: loadedItems, shouldSeed: shouldSeed, startedAt: start)
+        }
     }
 
     // Adds a new item and persists it.
@@ -41,6 +49,7 @@ final class ItemStore: ObservableObject {
             tags: tags,
             project: project
         )
+        markMutationBeforeInitialLoad()
         items.insert(item, at: 0)
         save()
     }
@@ -50,6 +59,7 @@ final class ItemStore: ObservableObject {
             return
         }
 
+        markMutationBeforeInitialLoad()
         var item = items[index]
         update(&item)
         items[index] = item
@@ -61,6 +71,7 @@ final class ItemStore: ObservableObject {
             return
         }
 
+        markMutationBeforeInitialLoad()
         let removedItem = items.remove(at: index)
         deletedHistory.append(DeletedItem(item: removedItem, index: index, deletedAt: Date()))
         if deletedHistory.count > 10 {
@@ -69,11 +80,30 @@ final class ItemStore: ObservableObject {
         save()
     }
 
+    func toggleCompletion(id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        markMutationBeforeInitialLoad()
+        items[index].isCompleted.toggle()
+        save()
+    }
+
+    func setCompletion(id: UUID, isCompleted: Bool) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        markMutationBeforeInitialLoad()
+        items[index].isCompleted = isCompleted
+        save()
+    }
+
     func undoLastDelete() {
         guard let lastDeleted = deletedHistory.popLast() else {
             return
         }
 
+        markMutationBeforeInitialLoad()
         let insertionIndex = min(lastDeleted.index, items.count)
         items.insert(lastDeleted.item, at: insertionIndex)
         save()
@@ -150,25 +180,19 @@ final class ItemStore: ObservableObject {
         return InboxImportResult(totalCount: items.count)
     }
 
-    // Loads existing items or seeds sample data on first run.
-    private func load() {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            items = [
-                Item(type: .note, title: "Welcome", details: "Add your first thought or task."),
-                Item(type: .idea, title: "Sample idea", details: "Capture quick ideas here.")
-            ]
-            save()
-            return
+    private func finishInitialLoad(loadedItems: [Item], shouldSeed: Bool, startedAt: Date) {
+        let resolvedItems = shouldSeed ? Self.seedItems() : loadedItems
+        if hasMutatedBeforeInitialLoad {
+            items = mergeLoadedItems(resolvedItems, into: items)
+        } else {
+            items = resolvedItems
         }
-
-        do {
-            let data = try Data(contentsOf: fileURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            items = try decoder.decode([Item].self, from: data)
-        } catch {
-            // If decoding fails, fall back to an empty list.
-            items = []
+        hasCompletedInitialLoad = true
+        if shouldSeed && !hasMutatedBeforeInitialLoad {
+            save()
+            AppPerformanceLogger.shared.mark("ItemStore load (seeded)", since: startedAt)
+        } else {
+            AppPerformanceLogger.shared.mark("ItemStore load", since: startedAt)
         }
     }
 
@@ -184,6 +208,45 @@ final class ItemStore: ObservableObject {
             // Silently ignore write failures for now (can add error UI later).
             return
         }
+    }
+
+    private func markMutationBeforeInitialLoad() {
+        if !hasCompletedInitialLoad {
+            hasMutatedBeforeInitialLoad = true
+        }
+    }
+
+    private func mergeLoadedItems(_ loadedItems: [Item], into currentItems: [Item]) -> [Item] {
+        var merged: [UUID: Item] = Dictionary(uniqueKeysWithValues: loadedItems.map { ($0.id, $0) })
+        for item in currentItems {
+            merged[item.id] = item
+        }
+        return merged.values.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private static func loadItems(from fileURL: URL) async -> ([Item], Bool) {
+        await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                return ([], true)
+            }
+
+            do {
+                let data = try Data(contentsOf: fileURL)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let items = try decoder.decode([Item].self, from: data)
+                return (items, false)
+            } catch {
+                return ([], false)
+            }
+        }.value
+    }
+
+    private static func seedItems() -> [Item] {
+        [
+            Item(type: .note, title: "Welcome", details: "Add your first thought or task."),
+            Item(type: .idea, title: "Sample idea", details: "Capture quick ideas here.")
+        ]
     }
 
     // Default file location used by the app.

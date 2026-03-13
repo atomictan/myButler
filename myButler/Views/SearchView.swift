@@ -38,15 +38,21 @@ struct SearchView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title)
                                         .font(.headline)
+                                        .strikethrough(item.isCompleted)
+                                        .foregroundStyle(item.isCompleted ? .secondary : .primary)
                                     if !item.details.isEmpty {
                                         Text(item.details)
                                             .font(.subheadline)
+                                            .strikethrough(item.isCompleted)
                                             .foregroundStyle(.secondary)
                                     }
                                     Text(item.type.rawValue.capitalized)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     HStack(spacing: 8) {
+                                        if item.isCompleted {
+                                            Text("Completed")
+                                        }
                                         Text(item.priority.label)
                                     if let dueDate = item.dueDate {
                                         Text("Due \(Item.dueDateDisplay(dueDate))")
@@ -67,9 +73,11 @@ struct SearchView: View {
                         }
                         .onDelete(perform: deleteItems)
                     }
+                    .themedScrollableBackground()
                 }
             }
             .navigationTitle("Search")
+            .themedBackground()
         }
         // Search bar that binds to the local query state.
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
@@ -83,6 +91,8 @@ struct SearchView: View {
     }
 }
 
-#Preview {
-    SearchView(store: ItemStore())
+struct SearchView_Previews: PreviewProvider {
+    static var previews: some View {
+        SearchView(store: ItemStore())
+    }
 }

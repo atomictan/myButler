@@ -9,9 +9,12 @@ mkdir -p "$target_dir"
 patterns=(
   "voice-session-*.log"
   "voice-diff-*.json"
+  "voice-diff-error-*.json"
   "voice-items-*.json"
   "voice-monitor-*.json"
   "logs-debug-info-*.txt"
+  "app-performance.log"
+  "app-performance-share-*.log"
 )
 
 copied_count=0

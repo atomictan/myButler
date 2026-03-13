@@ -46,9 +46,11 @@ struct ProjectsView: View {
                             }
                         }
                     }
+                    .themedScrollableBackground()
                 }
             }
             .navigationTitle("Projects")
+            .themedBackground()
         }
     }
 
@@ -56,15 +58,21 @@ struct ProjectsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(item.title)
                 .font(.headline)
+                .strikethrough(item.isCompleted)
+                .foregroundStyle(item.isCompleted ? .secondary : .primary)
             if !item.details.isEmpty {
                 Text(item.details)
                     .font(.subheadline)
+                    .strikethrough(item.isCompleted)
                     .foregroundStyle(.secondary)
             }
             Text(item.type.rawValue.capitalized)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
+                if item.isCompleted {
+                    Text("Completed")
+                }
                 Text(item.priority.label)
                 if let dueDate = item.dueDate {
                     Text("Due \(Item.dueDateDisplay(dueDate))")
@@ -88,6 +96,8 @@ struct ProjectsView: View {
     }
 }
 
-#Preview {
-    ProjectsView(store: ItemStore())
+struct ProjectsView_Previews: PreviewProvider {
+    static var previews: some View {
+        ProjectsView(store: ItemStore())
+    }
 }

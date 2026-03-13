@@ -14,6 +14,7 @@ struct TodayView: View {
     private var overdueItems: [Item] {
         store.items
             .filter { item in
+                guard !item.isCompleted else { return false }
                 guard let dueDate = item.dueDate else { return false }
                 return dueDate < startOfDay
             }
@@ -23,6 +24,7 @@ struct TodayView: View {
     private var dueTodayItems: [Item] {
         store.items
             .filter { item in
+                guard !item.isCompleted else { return false }
                 guard let dueDate = item.dueDate else { return false }
                 return dueDate >= startOfDay && dueDate < endOfDay
             }
@@ -32,6 +34,7 @@ struct TodayView: View {
     private var highPriorityItems: [Item] {
         store.items
             .filter { item in
+                guard !item.isCompleted else { return false }
                 guard item.priority == .high else { return false }
                 guard let dueDate = item.dueDate else { return true }
                 return dueDate >= endOfDay
@@ -91,11 +94,13 @@ struct TodayView: View {
                             }
                         }
                     }
+                    .themedScrollableBackground()
                 } else {
                     ContentUnavailableView("Nothing due today", systemImage: "sun.max")
                 }
             }
             .navigationTitle("Today")
+            .themedBackground()
         }
     }
 
@@ -109,32 +114,48 @@ struct TodayView: View {
     }
 
     private func itemRow(for item: Item) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(item.title)
-                .font(.headline)
-            if !item.details.isEmpty {
-                Text(item.details)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 10) {
+            Button {
+                store.toggleCompletion(id: item.id)
+            } label: {
+                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(item.isCompleted ? .green : .secondary)
             }
-            Text(item.type.rawValue.capitalized)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                Text(item.priority.label)
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(.headline)
+                    .strikethrough(item.isCompleted)
+                    .foregroundStyle(item.isCompleted ? .secondary : .primary)
+                if !item.details.isEmpty {
+                    Text(item.details)
+                        .font(.subheadline)
+                        .strikethrough(item.isCompleted)
+                        .foregroundStyle(.secondary)
+                }
+                Text(item.type.rawValue.capitalized)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    if item.isCompleted {
+                        Text("Completed")
+                    }
+                    Text(item.priority.label)
                     if let dueDate = item.dueDate {
                         Text("Due \(Item.dueDateDisplay(dueDate))")
                     }
-                if let project = item.project, !project.isEmpty {
-                    Text(project)
+                    if let project = item.project, !project.isEmpty {
+                        Text(project)
+                    }
+                    if !item.tags.isEmpty {
+                        Text(item.tags.joined(separator: ", "))
+                            .lineLimit(1)
+                    }
                 }
-                if !item.tags.isEmpty {
-                    Text(item.tags.joined(separator: ", "))
-                        .lineLimit(1)
-                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
@@ -147,6 +168,8 @@ struct TodayView: View {
     }
 }
 
-#Preview {
-    TodayView(store: ItemStore())
+struct TodayView_Previews: PreviewProvider {
+    static var previews: some View {
+        TodayView(store: ItemStore())
+    }
 }

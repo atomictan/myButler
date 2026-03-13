@@ -3,36 +3,25 @@ import SwiftUI
 struct AddItemView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: ItemStore
+    let initialType: ItemType
 
     // Form state.
     @State private var title = ""
     @State private var details = ""
-    @State private var type: ItemType = .note
     @State private var priority: ItemPriority = .normal
     @State private var hasDueDate = false
     @State private var dueDate = Date()
     @State private var projectText = ""
     @State private var tagsText = ""
-    @State private var isStructuring = false
-    @State private var proposedDraft: StructuredDraft?
-    @State private var proposedRawText = ""
-    @State private var structuringError: String?
-    @State private var isShowingProposedStructure = false
+
+    init(store: ItemStore, initialType: ItemType = .note) {
+        self.store = store
+        self.initialType = initialType
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Type") {
-                    // Quick category selection.
-                    Picker("Type", selection: $type) {
-                        ForEach(ItemType.allCases) { itemType in
-                            Text(itemType.rawValue.capitalized)
-                                .tag(itemType)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-
                 Section("Title") {
                     // Short summary for the list.
                     TextField("Short title", text: $title)
@@ -51,16 +40,16 @@ struct AddItemView: View {
                                 .tag(itemPriority)
                         }
                     }
-                Toggle("Has due date", isOn: $hasDueDate)
-                if hasDueDate {
-                    DatePicker("Due date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
-                }
+                    Toggle("Has due date", isOn: $hasDueDate)
+                    if hasDueDate {
+                        DatePicker("Due date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                    }
                     TextField("Project", text: $projectText)
                     TextField("Tags (comma separated)", text: $tagsText)
                 }
 
             }
-            .navigationTitle("New Item")
+            .navigationTitle(navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -69,37 +58,13 @@ struct AddItemView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(saveButtonTitle) {
                         // Persist the new item and close.
-                        startStructuring()
+                        saveItem()
                     }
-                    .disabled(isSaveDisabled || isStructuring)
+                    .disabled(isSaveDisabled)
                 }
             }
-        }
-        .overlay {
-            if isStructuring {
-                ProgressView("Structuring...")
-            }
-        }
-        .sheet(isPresented: $isShowingProposedStructure) {
-            if let proposedDraft {
-                ProposedStructureView(
-                    draft: proposedDraft,
-                    rawText: proposedRawText,
-                    store: store
-                ) {
-                    dismiss()
-                }
-            }
-        }
-        .alert("Structuring Failed", isPresented: Binding(
-            get: { structuringError != nil },
-            set: { _ in structuringError = nil }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(structuringError ?? "Unknown error")
         }
     }
 
@@ -108,66 +73,55 @@ struct AddItemView: View {
             && details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func startStructuring() {
+    private var navigationTitle: String {
+        switch initialType {
+        case .task:
+            return "New Task"
+        case .idea:
+            return "New Idea"
+        case .note:
+            return "New Note"
+        }
+    }
+
+    private var saveButtonTitle: String {
+        switch initialType {
+        case .task:
+            return "Save Task"
+        case .idea:
+            return "Save Idea"
+        case .note:
+            return "Save Note"
+        }
+    }
+
+    private func saveItem() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
         let rawText = trimmedDetails.isEmpty ? trimmedTitle : trimmedDetails
 
         guard !rawText.isEmpty else { return }
 
-        isStructuring = true
-        structuringError = nil
-        proposedRawText = rawText
-
-        Task {
-            do {
-                let service = StructuringService()
-                var draft = try await service.structure(text: rawText)
-                draft = StructuringParser.validate(draft)
-
-                if !trimmedTitle.isEmpty {
-                    draft.title = trimmedTitle
-                }
-                if !trimmedDetails.isEmpty {
-                    draft.details = trimmedDetails
-                }
-                if type != .note {
-                    draft.type = type
-                }
-                if priority != .normal {
-                    draft.priority = priority
-                }
-                if hasDueDate {
-                    draft.dueDate = dueDate
-                }
-                if let project = normalizedProject(from: projectText) {
-                    draft.project = project
-                }
-                let tags = normalizedTags(from: tagsText)
-                if !tags.isEmpty {
-                    draft.tags = tags
-                }
-
-                await MainActor.run {
-                    proposedDraft = draft
-                    isShowingProposedStructure = true
-                    isStructuring = false
-                }
-            } catch {
-                let message: String
-                if case StructuringError.unavailable(let name) = error {
-                    message = "\(name)."
-                } else if case StructuringError.invalidResponse(let details) = error {
-                    message = details
-                } else {
-                    message = error.localizedDescription
-                }
-                await MainActor.run {
-                    structuringError = message
-                    isStructuring = false
-                }
-            }
+        let resolvedTitle: String
+        if !trimmedTitle.isEmpty {
+            resolvedTitle = trimmedTitle
+        } else if trimmedDetails.isEmpty {
+            resolvedTitle = "Untitled"
+        } else {
+            resolvedTitle = String(trimmedDetails.prefix(40))
         }
+
+        store.addItem(
+            type: initialType,
+            title: resolvedTitle,
+            details: trimmedDetails,
+            rawText: rawText,
+            priority: priority,
+            dueDate: hasDueDate ? dueDate : nil,
+            tags: normalizedTags(from: tagsText),
+            project: normalizedProject(from: projectText)
+        )
+        dismiss()
     }
 
     private func normalizedTags(from text: String) -> [String] {
@@ -182,6 +136,8 @@ struct AddItemView: View {
     }
 }
 
-#Preview {
-    AddItemView(store: ItemStore())
+struct AddItemView_Previews: PreviewProvider {
+    static var previews: some View {
+        AddItemView(store: ItemStore(), initialType: .task)
+    }
 }

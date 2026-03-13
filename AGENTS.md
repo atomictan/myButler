@@ -14,4 +14,8 @@
 
 ## Notes
 - Sandbox/approval rules still apply even if permissions are listed here.
-- AirDrop logs land in `~/Downloads`; use `scripts/import-airdrop-logs.sh` to copy into `logs/airdrop`.
+- AirDrop Debug logs land in `~/Downloads`; When try to analyze debug logs, use `scripts/import-airdrop-logs.sh` to copy all the debug logs into `logs/airdrop` first.
+- When checking debug logs, pay attention to following things:
+	- whether the diff proposal makes sense or not, including both title and due date/time,  with regard to the transcript
+	- performance in app-performance.log make sense or not
+	- whether duplicate/similar items have been called out by Assistant and also in the diff proposal

@@ -1,7 +1,7 @@
 import Foundation
 
 // High-level category for an item so we can filter later.
-enum ItemType: String, Codable, CaseIterable, Identifiable {
+enum ItemType: String, Codable, CaseIterable, Identifiable, Sendable {
     case task
     case idea
     case note
@@ -10,7 +10,7 @@ enum ItemType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum ItemPriority: Int, Codable, CaseIterable, Identifiable {
+enum ItemPriority: Int, Codable, CaseIterable, Identifiable, Sendable {
     case low = 0
     case normal = 1
     case high = 2
@@ -30,7 +30,7 @@ enum ItemPriority: Int, Codable, CaseIterable, Identifiable {
 }
 
 // Core data model stored in JSON for now.
-struct Item: Identifiable, Codable {
+struct Item: Identifiable, Codable, Sendable {
     let id: UUID
     let createdAt: Date
     var type: ItemType
@@ -41,6 +41,7 @@ struct Item: Identifiable, Codable {
     var dueDate: Date?
     var tags: [String]
     var project: String?
+    var isCompleted: Bool
 
     // Convenience initializer used by the Add screen.
     init(
@@ -53,7 +54,8 @@ struct Item: Identifiable, Codable {
         priority: ItemPriority = .normal,
         dueDate: Date? = nil,
         tags: [String] = [],
-        project: String? = nil
+        project: String? = nil,
+        isCompleted: Bool = false
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -66,6 +68,7 @@ struct Item: Identifiable, Codable {
         self.dueDate = dueDate
         self.tags = tags
         self.project = project
+        self.isCompleted = isCompleted
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -79,6 +82,7 @@ struct Item: Identifiable, Codable {
         case dueDate
         case tags
         case project
+        case isCompleted
     }
 
     init(from decoder: Decoder) throws {
@@ -93,6 +97,7 @@ struct Item: Identifiable, Codable {
         dueDate = try container.decodeIfPresent(Date.self, forKey: .dueDate)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         project = try container.decodeIfPresent(String.self, forKey: .project)
+        isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -107,6 +112,7 @@ struct Item: Identifiable, Codable {
         try container.encodeIfPresent(dueDate, forKey: .dueDate)
         try container.encode(tags, forKey: .tags)
         try container.encodeIfPresent(project, forKey: .project)
+        try container.encode(isCompleted, forKey: .isCompleted)
     }
 }
 

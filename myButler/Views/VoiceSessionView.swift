@@ -3,11 +3,13 @@ import SwiftUI
 struct VoiceSessionView: View {
     @ObservedObject var store: ItemStore
     @StateObject private var viewModel: VoiceSessionViewModel
+    @State private var hasLoggedFirstAppear = false
     @AppStorage("voiceSessionDebugEnabled") private var voiceSessionDebugEnabled = false
     @AppStorage("voiceSessionUseSpeaker") private var voiceSessionUseSpeaker = true
 
     init(store: ItemStore) {
         self.store = store
+        AppPerformanceLogger.shared.log("VoiceSessionView init")
         _viewModel = StateObject(wrappedValue: VoiceSessionViewModel(store: store))
     }
 
@@ -32,6 +34,7 @@ struct VoiceSessionView: View {
             }
             .padding()
             .navigationTitle("Voice")
+            .themedBackground()
             .onChange(of: voiceSessionUseSpeaker) { _, newValue in
                 viewModel.updateSpeakerRouting(useSpeaker: newValue)
             }
@@ -61,6 +64,11 @@ struct VoiceSessionView: View {
                         }
                     )
                 }
+            }
+            .onAppear {
+                guard !hasLoggedFirstAppear else { return }
+                hasLoggedFirstAppear = true
+                AppPerformanceLogger.shared.log("VoiceSessionView first appear")
             }
         }
     }
@@ -176,6 +184,8 @@ struct VoiceSessionView: View {
 
 }
 
-#Preview {
-    VoiceSessionView(store: ItemStore())
+struct VoiceSessionView_Previews: PreviewProvider {
+    static var previews: some View {
+        VoiceSessionView(store: ItemStore())
+    }
 }

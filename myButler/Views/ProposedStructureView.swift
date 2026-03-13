@@ -123,11 +123,13 @@ struct ProposedStructureView: View {
     }
 }
 
-#Preview {
-    ProposedStructureView(
-        draft: StructuredDraft(title: "Sample", details: "Sample details"),
-        rawText: "Sample details",
-        store: ItemStore(),
-        onComplete: {}
-    )
+struct ProposedStructureView_Previews: PreviewProvider {
+    static var previews: some View {
+        ProposedStructureView(
+            draft: StructuredDraft(title: "Sample", details: "Sample details"),
+            rawText: "Sample details",
+            store: ItemStore(),
+            onComplete: {}
+        )
+    }
 }

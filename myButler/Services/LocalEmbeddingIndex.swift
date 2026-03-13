@@ -23,11 +23,17 @@ final class LocalEmbeddingIndex {
     private let modelVersion: String
     private var records: [UUID: EmbeddingRecord] = [:]
     private let languageRecognizer = NLLanguageRecognizer()
+    private static var hasLoggedInit = false
 
     init(fileURL: URL? = nil, modelVersion: String = "nl-embedding-v1") {
+        let start = Date()
         self.fileURL = fileURL ?? Self.defaultFileURL()
         self.modelVersion = modelVersion
         load()
+        if !Self.hasLoggedInit {
+            Self.hasLoggedInit = true
+            AppPerformanceLogger.shared.mark("LocalEmbeddingIndex init", since: start)
+        }
     }
 
     func currentModelVersion() -> String {

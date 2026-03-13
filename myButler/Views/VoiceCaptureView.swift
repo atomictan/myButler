@@ -198,6 +198,8 @@ struct VoiceCaptureView: View {
     }
 }
 
-#Preview {
-    VoiceCaptureView(store: ItemStore())
+struct VoiceCaptureView_Previews: PreviewProvider {
+    static var previews: some View {
+        VoiceCaptureView(store: ItemStore())
+    }
 }

@@ -2,11 +2,13 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: ItemStore
+    @AppStorage("uiTheme") private var uiTheme = UITheme.classicBlue.rawValue
     @AppStorage("structuringProvider") private var structuringProvider = StructuringProviderKind.mock.rawValue
     @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
     @AppStorage("openAIModel") private var openAIModel = "gpt-5.2"
     @AppStorage("doubaoAPIToken") private var doubaoAPIToken = ""
     @AppStorage("doubaoModel") private var doubaoModel = "doubao-seed-2-0-mini-260215"
+    @AppStorage("doubaoDiffModel") private var doubaoDiffModel = "doubao-seed-2-0-mini-260215"
     @AppStorage("weeklyDigestRemindersEnabled") private var weeklyDigestRemindersEnabled = true
     @AppStorage("doubaoRealtimeAppId") private var doubaoRealtimeAppId = ""
     @AppStorage("doubaoRealtimeAccessKey") private var doubaoRealtimeAccessKey = ""
@@ -25,6 +27,7 @@ struct SettingsView: View {
     @AppStorage("weeklyDigestReminderMinute") private var weeklyDigestReminderMinute = 0
     @State private var isTestingConnection = false
     @State private var isTestingDoubaoConnection = false
+    @State private var isPreparingShareLogs = false
     @State private var testResultMessage: String?
     @State private var shareAlertMessage: String?
     @State private var sharePayload: SharePayload?
@@ -36,175 +39,299 @@ struct SettingsView: View {
         )
     }
 
-    var body: some View {
+    @ViewBuilder
+    private var appearanceSectionView: some View {
+        Section("Appearance") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("App Color Theme")
+                    .font(.subheadline.weight(.semibold))
+
+                HStack(spacing: 12) {
+                    ForEach(UITheme.allCases) { theme in
+                        Button {
+                            uiTheme = theme.rawValue
+                        } label: {
+                            VStack(spacing: 6) {
+                                ZStack {
+                                    Circle()
+                                        .fill(theme.secondaryColor)
+                                        .frame(width: 44, height: 44)
+                                    Circle()
+                                        .fill(theme.tintColor)
+                                        .frame(width: 26, height: 26)
+                                    if selectedTheme == theme {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(.white, theme.tintColor)
+                                            .offset(x: 15, y: -15)
+                                    }
+                                }
+                                Text(theme.label)
+                                    .font(.caption)
+                                    .foregroundStyle(.primary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Text("Changes the accent color used across tabs, buttons, toggles, and highlights.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var weeklyDigestSectionView: some View {
+        Section("Weekly Digest") {
+            NavigationLink {
+                WeeklyDigestView(store: store)
+            } label: {
+                Text("Weekly Digest")
+            }
+            Toggle(reminderLabel, isOn: $weeklyDigestRemindersEnabled)
+            Picker("Day", selection: $weeklyDigestReminderWeekday) {
+                ForEach(1...7, id: \.self) { day in
+                    Text(weekdayLabel(for: day))
+                        .tag(day)
+                }
+            }
+            DatePicker("Time", selection: reminderTimeBinding, displayedComponents: .hourAndMinute)
+            Text("You can disable this reminder anytime in Settings.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var deletedItemsSectionView: some View {
+        Section("Deleted Items") {
+            NavigationLink {
+                UndoHistoryView(store: store)
+            } label: {
+                HStack {
+                    Text("Undo History")
+                    Spacer()
+                    if !store.deletedHistory.isEmpty {
+                        Text("\(store.deletedHistory.count)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var providerSections: some View {
+        Section("AI Provider") {
+            Picker("Model", selection: providerSelection) {
+                ForEach(StructuringProviderKind.allCases) { provider in
+                    Text(provider.rawValue.capitalized)
+                        .tag(provider)
+                }
+            }
+        }
+        if providerSelection.wrappedValue == .openAI {
+            openAISectionView
+        }
+        if providerSelection.wrappedValue == .doubao {
+            doubaoSectionView
+            doubaoRealtimeSectionView
+        }
+    }
+
+    private var openAISectionView: some View {
+        Section("OpenAI") {
+            SecureField("API Key", text: $openAIAPIKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Model", text: $openAIModel)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Test Connection") {
+                testConnection()
+            }
+            .disabled(openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTestingConnection)
+        }
+    }
+
+    private var doubaoSectionView: some View {
+        let modelPresets = [
+            "doubao-seed-2-0-mini-260215",
+            "doubao-seed-2-0-pro-260215",
+            "doubao-seed-1-8-251228",
+            "doubao-seed-1-6-lite-251015"
+        ]
+        return Section("Doubao") {
+            SecureField("API Token", text: $doubaoAPIToken)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Model", text: $doubaoModel)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Picker("Preset", selection: $doubaoModel) {
+                ForEach(modelPresets, id: \.self) { preset in
+                    Text(preset).tag(preset)
+                }
+            }
+            TextField("Review Model", text: $doubaoDiffModel)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Picker("Review Preset", selection: $doubaoDiffModel) {
+                ForEach(modelPresets, id: \.self) { preset in
+                    Text(preset).tag(preset)
+                }
+            }
+            Button("Use Main Model for Review") {
+                doubaoDiffModel = doubaoModel
+            }
+            Text("Review Model is used for end-of-session diff generation. You can type any new model ID here when faster models become available.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Direct API tokens are for testing; use a backend proxy in production.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Test Connection") {
+                testDoubaoConnection()
+            }
+            .disabled(doubaoAPIToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTestingDoubaoConnection)
+        }
+    }
+
+    private var doubaoRealtimeSectionView: some View {
+        Section("Doubao Realtime") {
+            TextField("App ID", text: $doubaoRealtimeAppId)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("Access Key", text: $doubaoRealtimeAccessKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Text("These keys are required for realtime voice sessions.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var voiceSessionSections: some View {
+        Section("Voice Session") {
+            Toggle("Use Speaker Output", isOn: $voiceSessionUseSpeaker)
+            Text("Routes voice sessions to the iPhone speaker instead of the receiver.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("Transcript Source", selection: $voiceSessionASRSource) {
+                Text("Doubao ASR").tag("doubao")
+                Text("Local Speech").tag("local")
+            }
+            Text("Select how your voice is transcribed in Voice sessions.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            #if DEBUG
+            Toggle("Show Debug Meters", isOn: $voiceSessionDebugEnabled)
+            Text("Shows mic/output levels and packet stats in Voice mode.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            #endif
+        }
+
+        Section("Voice Session Debug") {
+            Toggle("Save Debug Logs", isOn: $voiceSessionDebugLoggingEnabled)
+            Text("Enable this before a session to capture logs.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Share Latest Logs") {
+                shareLatestLogs()
+            }
+            .disabled(isPreparingShareLogs)
+            if isPreparingShareLogs {
+                ProgressView("Preparing logs…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var settingsForm: some View {
         Form {
-            Section("Weekly Digest") {
-                NavigationLink {
-                    WeeklyDigestView(store: store)
-                } label: {
-                    Text("Weekly Digest")
-                }
-                Toggle(reminderLabel, isOn: $weeklyDigestRemindersEnabled)
-                Picker("Day", selection: $weeklyDigestReminderWeekday) {
-                    ForEach(1...7, id: \.self) { day in
-                        Text(weekdayLabel(for: day))
-                            .tag(day)
-                    }
-                }
-                DatePicker("Time", selection: reminderTimeBinding, displayedComponents: .hourAndMinute)
-                Text("You can disable this reminder anytime in Settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Deleted Items") {
-                NavigationLink {
-                    UndoHistoryView(store: store)
-                } label: {
-                    HStack {
-                        Text("Undo History")
-                        Spacer()
-                        if !store.deletedHistory.isEmpty {
-                            Text("\(store.deletedHistory.count)")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-            Section("AI Provider") {
-                Picker("Model", selection: providerSelection) {
-                    ForEach(StructuringProviderKind.allCases) { provider in
-                        Text(provider.rawValue.capitalized)
-                            .tag(provider)
-                    }
-                }
-            }
-            if providerSelection.wrappedValue == .openAI {
-                Section("OpenAI") {
-                    SecureField("API Key", text: $openAIAPIKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Model", text: $openAIModel)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Test Connection") {
-                        testConnection()
-                    }
-                    .disabled(openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTestingConnection)
-                }
-            }
-
-            if providerSelection.wrappedValue == .doubao {
-                Section("Doubao") {
-                    let modelPresets = [
-                        "doubao-seed-2-0-mini-260215",
-                        "doubao-seed-2-0-pro-260215",
-                        "doubao-seed-1-8-251228",
-                        "doubao-seed-1-6-lite-251015"
-                    ]
-                    SecureField("API Token", text: $doubaoAPIToken)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Model", text: $doubaoModel)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Picker("Preset", selection: $doubaoModel) {
-                        ForEach(modelPresets, id: \.self) { preset in
-                            Text(preset).tag(preset)
-                        }
-                    }
-                    Text("Direct API tokens are for testing; use a backend proxy in production.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("Test Connection") {
-                        testDoubaoConnection()
-                    }
-                    .disabled(doubaoAPIToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTestingDoubaoConnection)
-                }
-
-                Section("Doubao Realtime") {
-                    TextField("App ID", text: $doubaoRealtimeAppId)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    SecureField("Access Key", text: $doubaoRealtimeAccessKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Text("These keys are required for realtime voice sessions.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Voice Session") {
-                Toggle("Use Speaker Output", isOn: $voiceSessionUseSpeaker)
-                Text("Routes voice sessions to the iPhone speaker instead of the receiver.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("Transcript Source", selection: $voiceSessionASRSource) {
-                    Text("Doubao ASR").tag("doubao")
-                    Text("Local Speech").tag("local")
-                }
-                Text("Select how your voice is transcribed in Voice sessions.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                #if DEBUG
-                Toggle("Show Debug Meters", isOn: $voiceSessionDebugEnabled)
-                Text("Shows mic/output levels and packet stats in Voice mode.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                #endif
-            }
-
-            Section("Voice Session Debug") {
-                Toggle("Save Debug Logs", isOn: $voiceSessionDebugLoggingEnabled)
-                Text("Enable this before a session to capture logs.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Share Latest Logs") {
-                    shareLatestLogs()
-                }
-            }
+            appearanceSectionView
+            weeklyDigestSectionView
+            deletedItemsSectionView
+            providerSections
+            voiceSessionSections
         }
-        .navigationTitle("Settings")
-        .onChange(of: weeklyDigestRemindersEnabled) { _, newValue in
-            Task {
-                await WeeklyDigestReminder.updateSchedule(isEnabled: newValue, schedule: reminderSchedule)
-            }
-        }
-            .onChange(of: weeklyDigestReminderWeekday) { _, _ in
-                updateReminderSchedule()
-            }
-            .onChange(of: weeklyDigestReminderHour) { _, _ in
-                updateReminderSchedule()
-            }
-        .onChange(of: weeklyDigestReminderMinute) { _, _ in
-            updateReminderSchedule()
-        }
-        .overlay {
-            if isTestingConnection || isTestingDoubaoConnection {
-                ProgressView("Testing...")
-            }
-        }
-        .alert("Connection Test", isPresented: Binding(
+    }
+
+    private var connectionTestAlertBinding: Binding<Bool> {
+        Binding(
             get: { testResultMessage != nil },
             set: { _ in testResultMessage = nil }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(testResultMessage ?? "")
-        }
-        .alert("Share Logs", isPresented: Binding(
+        )
+    }
+
+    private var shareLogsAlertBinding: Binding<Bool> {
+        Binding(
             get: { shareAlertMessage != nil },
             set: { _ in shareAlertMessage = nil }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(shareAlertMessage ?? "")
-        }
-        .sheet(item: $sharePayload) { payload in
-            ShareSheet(items: payload.items)
-        }
+        )
+    }
+
+    private var baseSettingsView: AnyView {
+        AnyView(
+            settingsForm
+                .themedScrollableBackground()
+                .navigationTitle("Settings")
+                .onChange(of: weeklyDigestRemindersEnabled) { _, newValue in
+                    Task {
+                        await WeeklyDigestReminder.updateSchedule(isEnabled: newValue, schedule: reminderSchedule)
+                    }
+                }
+                .onChange(of: weeklyDigestReminderWeekday) { _, _ in
+                    updateReminderSchedule()
+                }
+                .onChange(of: weeklyDigestReminderHour) { _, _ in
+                    updateReminderSchedule()
+                }
+                .onChange(of: weeklyDigestReminderMinute) { _, _ in
+                    updateReminderSchedule()
+                }
+        )
+    }
+
+    private var loadingOverlayView: AnyView {
+        AnyView(
+            baseSettingsView
+                .overlay {
+                    if isTestingConnection || isTestingDoubaoConnection {
+                        ProgressView("Testing...")
+                    }
+                }
+        )
+    }
+
+    private var configuredBody: AnyView {
+        AnyView(
+            loadingOverlayView
+                .alert("Connection Test", isPresented: connectionTestAlertBinding) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(testResultMessage ?? "")
+                }
+                .alert("Share Logs", isPresented: shareLogsAlertBinding) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(shareAlertMessage ?? "")
+                }
+                .sheet(item: $sharePayload) { payload in
+                    shareSheetView(for: payload)
+                }
+        )
+    }
+
+    var body: some View {
+        configuredBody
     }
 
     private var reminderSchedule: WeeklyDigestSchedule {
@@ -253,18 +380,46 @@ struct SettingsView: View {
         }
     }
 
+    private var selectedTheme: UITheme {
+        UITheme(rawValue: uiTheme) ?? .classicBlue
+    }
+
     private func shareLatestLogs() {
-        let latestLogs = VoiceSessionDebugLogger.latestRunLogFiles()
-        guard !latestLogs.isEmpty else {
+        let start = Date()
+        AppPerformanceLogger.shared.log("Share Latest Logs tapped")
+        var latestLogs = VoiceSessionDebugLogger.latestRunLogFiles()
+        latestLogs.removeAll { $0.lastPathComponent == "app-performance.log" }
+        guard !latestLogs.isEmpty || VoiceSessionDebugLogger.latestRunLogFiles().contains(where: { $0.lastPathComponent == "app-performance.log" }) else {
             shareAlertMessage = "No recent voice session logs found yet."
+            AppPerformanceLogger.shared.log("Share Latest Logs aborted: no logs")
             return
         }
-        let exported = VoiceSessionDebugLogger.exportLogsForFileSharing(urls: latestLogs)
-        guard !exported.isEmpty else {
-            shareAlertMessage = "Failed to export logs for sharing."
-            return
+        isPreparingShareLogs = true
+        Task.detached(priority: .userInitiated) {
+            var exportedLogs = VoiceSessionDebugLogger.exportLogsForFileSharing(urls: latestLogs)
+            let performanceSnapshot = await MainActor.run {
+                AppPerformanceLogger.shared.snapshotForSharing(logging: "Share Latest Logs export completed")
+            }
+            if let performanceSnapshot {
+                exportedLogs.append(contentsOf: VoiceSessionDebugLogger.exportLogsForFileSharing(urls: [performanceSnapshot]))
+            }
+            let finalExportedLogs = exportedLogs
+            await MainActor.run {
+                isPreparingShareLogs = false
+                guard !finalExportedLogs.isEmpty else {
+                    shareAlertMessage = "Failed to export logs for sharing."
+                    AppPerformanceLogger.shared.mark("Share Latest Logs export failed", since: start)
+                    return
+                }
+                AppPerformanceLogger.shared.mark("Share Latest Logs export", since: start)
+                sharePayload = SharePayload(items: finalExportedLogs)
+            }
         }
-        sharePayload = SharePayload(items: exported)
+    }
+
+    private func shareSheetView(for payload: SharePayload) -> some View {
+        AppPerformanceLogger.shared.log("Share Latest Logs sheet presented")
+        return ShareSheet(items: payload.items)
     }
 
     private func testConnection() {
@@ -337,8 +492,10 @@ private struct SharePayload: Identifiable {
     let items: [Any]
 }
 
-#Preview {
-    NavigationStack {
-        SettingsView(store: ItemStore())
+struct SettingsView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            SettingsView(store: ItemStore())
+        }
     }
 }

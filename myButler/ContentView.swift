@@ -10,12 +10,14 @@ import SwiftUI
 struct ContentView: View {
     // Shared store injected from the App entry point.
     @ObservedObject var store: ItemStore
+    @AppStorage("uiTheme") private var uiTheme = UITheme.classicBlue.rawValue
     @State private var isShowingUndoHistory = false
     @State private var isShowingUndoBanner = false
     @AppStorage("weeklyDigestRemindersEnabled") private var weeklyDigestRemindersEnabled = true
     @AppStorage("weeklyDigestReminderWeekday") private var weeklyDigestReminderWeekday = 1
     @AppStorage("weeklyDigestReminderHour") private var weeklyDigestReminderHour = 18
     @AppStorage("weeklyDigestReminderMinute") private var weeklyDigestReminderMinute = 0
+    @State private var hasLoggedFirstAppear = false
 
     var body: some View {
         TabView {
@@ -51,6 +53,7 @@ struct ContentView: View {
                     Label("Settings", systemImage: "gearshape")
                 }
         }
+        .tint(selectedTheme.tintColor)
         .overlay(alignment: .bottom) {
             if store.latestDeleted != nil && isShowingUndoBanner {
                 undoBanner
@@ -68,12 +71,21 @@ struct ContentView: View {
             cleanupLegacyReminderSettings()
             await WeeklyDigestReminder.updateSchedule(isEnabled: weeklyDigestRemindersEnabled, schedule: reminderSchedule)
         }
+        .onAppear {
+            guard !hasLoggedFirstAppear else { return }
+            hasLoggedFirstAppear = true
+            AppPerformanceLogger.shared.log("ContentView first appear")
+        }
     }
 
     private func cleanupLegacyReminderSettings() {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: "weeklyDigestReminderFrequency")
         defaults.removeObject(forKey: "weeklyDigestReminderMonthDay")
+    }
+
+    private var selectedTheme: UITheme {
+        UITheme(rawValue: uiTheme) ?? .classicBlue
     }
 
     private var reminderSchedule: WeeklyDigestSchedule {
@@ -118,6 +130,8 @@ struct ContentView: View {
     }
 }
 
-#Preview {
-    ContentView(store: ItemStore())
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView(store: ItemStore())
+    }
 }

@@ -267,6 +267,8 @@ final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
     }
 }
 
-#Preview {
-    VoiceQueryView(store: ItemStore())
+struct VoiceQueryView_Previews: PreviewProvider {
+    static var previews: some View {
+        VoiceQueryView(store: ItemStore())
+    }
 }

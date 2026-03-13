@@ -25,8 +25,8 @@ final class VoiceSessionViewModel: ObservableObject {
     @Published var canGenerateDiff = false
 
     private let store: ItemStore
-    private let embeddingIndex = LocalEmbeddingIndex()
-    private let audioService = RealtimeAudioService()
+    private lazy var embeddingIndex = LocalEmbeddingIndex()
+    private lazy var audioService = RealtimeAudioService()
     private var provider: RealtimeSessionProvider?
     private var asrClient: DoubaoRealtimeASRClient?
     private var eventTask: Task<Void, Never>?
@@ -60,6 +60,11 @@ final class VoiceSessionViewModel: ObservableObject {
     private var lastDuplicatePromptAt: Date?
     private var duplicatePromptTask: Task<Void, Never>?
     private let duplicatePromptDebounceSeconds: TimeInterval = 0.8
+    private var recentUserIntentSegments: [String] = []
+    private var lastUserIntentAt: Date?
+    private let duplicateIntentSegmentLimit = 4
+    private let duplicateIntentCharLimit = 260
+    private let duplicateIntentResetSeconds: TimeInterval = 45
     private var lastDiffTranscript: String?
     private var lastDiffFullTranscript: String?
     private var lastDiffItemsSnapshot: [Item] = []
@@ -95,31 +100,42 @@ final class VoiceSessionViewModel: ObservableObject {
     }
     init(store: ItemStore) {
         self.store = store
+        AppPerformanceLogger.shared.log("VoiceSessionViewModel init")
     }
 
     func startSession() {
         guard !isActive else { return }
         Task.detached { [weak self] in
             guard let self else { return }
+            AppPerformanceLogger.shared.log("VoiceSession start tapped")
             await MainActor.run {
                 self.statusText = "Connecting..."
             }
             do {
                 print("[VoiceSession] Starting session")
+                AppPerformanceLogger.shared.log("VoiceSession makeProvider started")
                 let provider = try await MainActor.run { try self.makeProvider() }
+                AppPerformanceLogger.shared.log("VoiceSession makeProvider completed")
                 await MainActor.run {
                     self.provider = provider
                 }
+                AppPerformanceLogger.shared.log("VoiceSession provider.startSession started")
                 try await provider.startSession()
+                AppPerformanceLogger.shared.log("VoiceSession provider.startSession completed")
 
+                AppPerformanceLogger.shared.log("VoiceSession microphone permission requested")
                 let permissionGranted = await self.audioService.requestRecordPermission()
+                AppPerformanceLogger.shared.log("VoiceSession microphone permission result: \(permissionGranted)")
                 guard permissionGranted else {
                     throw NSError(domain: "VoiceSession", code: 2, userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied."])
                 }
                 let useLocalTranscription = await MainActor.run { self.useLocalTranscription }
                 if useLocalTranscription {
+                    AppPerformanceLogger.shared.log("VoiceSession speech permission requested")
                     _ = await self.audioService.requestSpeechPermission()
+                    AppPerformanceLogger.shared.log("VoiceSession speech permission completed")
                 } else {
+                    AppPerformanceLogger.shared.log("VoiceSession ASR client setup started")
                     try await MainActor.run {
                         self.asrClient = try self.makeASRClient()
                         self.asrClient?.onTranscript = { [weak self] text in
@@ -131,11 +147,17 @@ final class VoiceSessionViewModel: ObservableObject {
                             print("[VoiceSession][ASR] Error: \(error)")
                         }
                     }
+                    AppPerformanceLogger.shared.log("VoiceSession ASR client setup completed")
+                    AppPerformanceLogger.shared.log("VoiceSession ASR start started")
                     try await self.asrClient?.start()
+                    AppPerformanceLogger.shared.log("VoiceSession ASR start completed")
                 }
 
+                AppPerformanceLogger.shared.log("VoiceSession audio capture start requested")
                 try await MainActor.run {
                     self.latestUserTranscript = nil
+                    self.recentUserIntentSegments = []
+                    self.lastUserIntentAt = nil
                     self.hasReceivedUserTranscript = false
                     self.suppressAssistantUntilUser = true
                     self.pendingGreeting = true
@@ -150,7 +172,9 @@ final class VoiceSessionViewModel: ObservableObject {
                             self?.handleLocalTranscript(text, isFinal: false)
                         }
                     } : nil)
+                    AppPerformanceLogger.shared.log("VoiceSession audio capture started")
                     self.audioService.startPlayback()
+                    AppPerformanceLogger.shared.log("VoiceSession playback started")
                 }
                 let startDate = Date()
                 await MainActor.run {
@@ -169,9 +193,11 @@ final class VoiceSessionViewModel: ObservableObject {
                     self.pendingInitialContext = context.isEmpty ? nil : "Context only. Do not respond yet.\n\(context)"
                 }
                 try await provider.sendText("Please greet the user by saying: \"Hi, what can I do for you?\" Then wait for their reply before responding to any context.")
+                AppPerformanceLogger.shared.log("VoiceSession initial greeting requested")
                 print("[VoiceSession] Session started")
             } catch {
                 print("[VoiceSession] Session error: \(error.localizedDescription)")
+                AppPerformanceLogger.shared.log("VoiceSession start failed: \(error.localizedDescription)")
                 await MainActor.run {
                     self.handleError(error)
                 }
@@ -216,6 +242,8 @@ final class VoiceSessionViewModel: ObservableObject {
                 self.flushPendingEmbeddingMetrics(reason: "no_response")
                 self.suppressAssistantUntilUser = false
                 self.hasReceivedUserTranscript = false
+                self.recentUserIntentSegments = []
+                self.lastUserIntentAt = nil
                 self.pendingGreeting = false
                 self.pendingInitialContext = nil
                 self.greetingAudioGraceUntil = nil
@@ -455,9 +483,10 @@ final class VoiceSessionViewModel: ObservableObject {
 
     private func scheduleDuplicatePrompt(for text: String, isFinal: Bool) {
         duplicatePromptTask?.cancel()
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let duplicateQuery = duplicatePromptQuery(for: text, isFinal: isFinal)
+        guard !duplicateQuery.isEmpty else { return }
         if isFinal {
-            maybePromptDuplicate(for: text)
+            maybePromptDuplicate(for: duplicateQuery)
             return
         }
         let capturedText = text
@@ -467,9 +496,54 @@ final class VoiceSessionViewModel: ObservableObject {
             guard let self, !Task.isCancelled else { return }
             await MainActor.run {
                 guard self.latestUserTranscript == capturedText else { return }
-                self.maybePromptDuplicate(for: capturedText)
+                let query = self.duplicatePromptQuery(for: capturedText, isFinal: false)
+                guard !query.isEmpty else { return }
+                self.maybePromptDuplicate(for: query)
             }
         }
+    }
+
+    private func duplicatePromptQuery(for text: String, isFinal: Bool) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let now = Date()
+        if let lastUserIntentAt, now.timeIntervalSince(lastUserIntentAt) > duplicateIntentResetSeconds {
+            recentUserIntentSegments = []
+        }
+        lastUserIntentAt = now
+
+        if isFinal {
+            if recentUserIntentSegments.last != trimmed {
+                recentUserIntentSegments.append(trimmed)
+            }
+            trimRecentUserIntentSegments()
+            return recentUserIntentSegments.joined(separator: " ")
+        }
+
+        var segments = recentUserIntentSegments
+        if segments.last != trimmed {
+            segments.append(trimmed)
+        }
+        return trimIntentSegments(segments).joined(separator: " ")
+    }
+
+    private func trimRecentUserIntentSegments() {
+        recentUserIntentSegments = trimIntentSegments(recentUserIntentSegments)
+    }
+
+    private func trimIntentSegments(_ segments: [String]) -> [String] {
+        var trimmed = segments.filter { !$0.isEmpty }
+        if trimmed.count > duplicateIntentSegmentLimit {
+            trimmed = Array(trimmed.suffix(duplicateIntentSegmentLimit))
+        }
+        while trimmed.joined(separator: " ").count > duplicateIntentCharLimit, trimmed.count > 1 {
+            trimmed.removeFirst()
+        }
+        if let last = trimmed.last, last.count > duplicateIntentCharLimit {
+            trimmed = [String(last.suffix(duplicateIntentCharLimit))]
+        }
+        return trimmed
     }
 
     private func isConfirmCommand(_ command: String) -> Bool {
@@ -689,10 +763,11 @@ final class VoiceSessionViewModel: ObservableObject {
         guard useDiffBasedSession, embeddingDuplicatePromptsEnabled, let provider else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 6 else { return }
+        let visibleItems = assistantVisibleItems()
         var usedFallback = false
-        var matches = embeddingIndex.search(query: trimmed, items: store.items, limit: 5, minScore: embeddingDuplicateMinScore)
+        var matches = embeddingIndex.search(query: trimmed, items: visibleItems, limit: 5, minScore: embeddingDuplicateMinScore)
         if matches.isEmpty {
-            matches = fallbackSimilarityMatches(for: trimmed, items: store.items)
+            matches = fallbackSimilarityMatches(for: trimmed, items: visibleItems)
             usedFallback = !matches.isEmpty
         }
         guard let topMatch = matches.first else { return }
@@ -715,22 +790,65 @@ final class VoiceSessionViewModel: ObservableObject {
     private func fallbackSimilarityMatches(for text: String, items: [Item]) -> [EmbeddingMatch] {
         let normalizedQuery = normalizeSimilarityText(text)
         guard !normalizedQuery.isEmpty else { return [] }
-        let queryTokens = Set(normalizedQuery.split(separator: " "))
+        let queryTokens = significantSimilarityTokens(normalizedQuery)
         guard !queryTokens.isEmpty else { return [] }
+        let queryRoute = travelRoute(in: normalizedQuery)
         var matches: [EmbeddingMatch] = []
         for item in items where item.type == .task || item.type == .idea {
             let combined = normalizeSimilarityText("\(item.title) \(item.details)")
             guard !combined.isEmpty else { continue }
-            let itemTokens = Set(combined.split(separator: " "))
+            let itemTokens = significantSimilarityTokens(combined)
             guard !itemTokens.isEmpty else { continue }
             let intersection = queryTokens.intersection(itemTokens)
-            let overlap = Double(intersection.count) / Double(max(queryTokens.count, itemTokens.count))
-            if intersection.count >= 2 || overlap >= 0.5 {
-                matches.append(EmbeddingMatch(item: item, score: max(overlap, 0.6)))
+            let containment = Double(intersection.count) / Double(max(1, min(queryTokens.count, itemTokens.count)))
+            let overlap = max(containment, Double(intersection.count) / Double(max(queryTokens.count, itemTokens.count)))
+            let routeScore = travelRouteScore(queryRoute, travelRoute(in: combined))
+            let score = max(overlap, routeScore)
+            if intersection.count >= 2 || overlap >= 0.45 || routeScore >= 0.8 {
+                matches.append(EmbeddingMatch(item: item, score: max(score, routeScore >= 0.8 ? 0.85 : 0.6)))
             }
         }
         let sorted = matches.sorted { $0.score > $1.score }
         return Array(sorted.prefix(5))
+    }
+
+    private func significantSimilarityTokens(_ text: String) -> Set<Substring> {
+        let stopWords: Set<String> = [
+            "a", "an", "the", "to", "from", "for", "me", "my", "on", "at", "in", "of", "and",
+            "please", "could", "would", "you", "add", "set", "reminder", "trip", "take", "main"
+        ]
+        let tokens = text.split(separator: " ").filter { token in
+            token.count > 1 && !stopWords.contains(String(token))
+        }
+        return Set(tokens)
+    }
+
+    private func travelRoute(in text: String) -> (from: Set<Substring>, to: Set<Substring>)? {
+        let normalized = normalizeSimilarityText(text)
+        guard let fromRange = normalized.range(of: "from "),
+              let toRange = normalized.range(of: " to ", range: fromRange.upperBound..<normalized.endIndex) else {
+            return nil
+        }
+        let fromText = normalized[fromRange.upperBound..<toRange.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = normalized[toRange.upperBound...]
+        let delimiters = [" on ", " at ", " by ", " due ", " for "]
+        let destinationText = delimiters.compactMap { delimiter in
+            tail.range(of: delimiter).map { String(tail[..<$0.lowerBound]) }
+        }.first ?? String(tail)
+        let fromTokens = significantSimilarityTokens(fromText)
+        let toTokens = significantSimilarityTokens(destinationText)
+        guard !fromTokens.isEmpty, !toTokens.isEmpty else { return nil }
+        return (fromTokens, toTokens)
+    }
+
+    private func travelRouteScore(_ lhs: (from: Set<Substring>, to: Set<Substring>)?, _ rhs: (from: Set<Substring>, to: Set<Substring>)?) -> Double {
+        guard let lhs, let rhs else { return 0 }
+        let fromOverlap = Double(lhs.from.intersection(rhs.from).count) / Double(max(1, min(lhs.from.count, rhs.from.count)))
+        let toOverlap = Double(lhs.to.intersection(rhs.to).count) / Double(max(1, min(lhs.to.count, rhs.to.count)))
+        if fromOverlap >= 1.0 && toOverlap >= 1.0 {
+            return 0.95
+        }
+        return (fromOverlap + toOverlap) / 2.0
     }
 
     private func duplicateCandidatePrompt(utterance: String, matches: [EmbeddingMatch]) -> String {
@@ -893,22 +1011,26 @@ final class VoiceSessionViewModel: ObservableObject {
 
     private func recentItemsContext() -> String {
         let cutoff = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
-        let items = store.items.filter { $0.createdAt >= cutoff }
+        let items = assistantVisibleItems().filter { $0.createdAt >= cutoff }
         guard !items.isEmpty else { return "" }
         return formatContext(items: items, title: "Context items (last 30 days):")
     }
 
     private func sessionItemsContext() -> String {
-        let items = store.items
+        let items = assistantVisibleItems()
         guard !items.isEmpty else { return "" }
         return formatContext(items: items, title: "Inbox items:")
     }
 
     private func historyContext(months: Int) -> String {
         let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: Date()) ?? Date()
-        let items = store.items.filter { $0.createdAt >= cutoff }
+        let items = assistantVisibleItems().filter { $0.createdAt >= cutoff }
         guard !items.isEmpty else { return "" }
         return formatContext(items: items, title: "Context items (last \(months) months):")
+    }
+
+    private func assistantVisibleItems() -> [Item] {
+        store.items.filter { !$0.isCompleted }
     }
 
     private func formatContext(items: [Item], title: String) -> String {
@@ -940,7 +1062,7 @@ final class VoiceSessionViewModel: ObservableObject {
     private func generateDiffProposalIfNeeded() async {
         let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTranscript.isEmpty else { return }
-        let baseItems = store.items
+        let baseItems = assistantVisibleItems()
         writeVoiceItemsSnapshotLog(label: "before-diff")
         canGenerateDiff = true
         statusText = "Preparing Review"
@@ -977,6 +1099,8 @@ final class VoiceSessionViewModel: ObservableObject {
             statusText = "Review Ready"
             transcript = ""
             latestUserTranscript = nil
+            recentUserIntentSegments = []
+            lastUserIntentAt = nil
         } catch {
             lastDiffTranscript = lastContext.transcript
             lastDiffFullTranscript = trimmedTranscript
@@ -1316,7 +1440,7 @@ final class VoiceSessionViewModel: ObservableObject {
     }
 
     private func writeVoiceItemsSnapshotLog(label: String) {
-        let items = store.items.filter { $0.type == .task || $0.type == .idea }
+        let items = assistantVisibleItems().filter { $0.type == .task || $0.type == .idea }
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .iso8601)
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -1455,7 +1579,7 @@ final class VoiceSessionViewModel: ObservableObject {
     }
 
     private func makeItemsSnapshotLog() -> String? {
-        let items = store.items.filter { $0.type == .task || $0.type == .idea }
+        let items = assistantVisibleItems().filter { $0.type == .task || $0.type == .idea }
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .iso8601)
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -1962,12 +2086,13 @@ final class VoiceSessionViewModel: ObservableObject {
 
     private func findSimilarItem(for draft: DraftItem) -> Item? {
         let combined = [draft.title, draft.details].filter { !$0.isEmpty }.joined(separator: "\n")
-        if let match = embeddingIndex.bestMatch(query: combined, items: store.items), match.score >= 0.75 {
+        let visibleItems = assistantVisibleItems()
+        if let match = embeddingIndex.bestMatch(query: combined, items: visibleItems), match.score >= 0.75 {
             return match.item
         }
         let normalizedDraft = normalizeSimilarityText(draft.title)
         guard !normalizedDraft.isEmpty else { return nil }
-        return store.items.first { item in
+        return visibleItems.first { item in
             let normalizedItem = normalizeSimilarityText(item.title)
             return isSimilarText(normalizedDraft, normalizedItem)
         }

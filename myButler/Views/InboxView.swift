@@ -55,15 +55,24 @@ struct InboxView: View {
     @State private var isShowingVoiceCapture = false
     @State private var sortOption: InboxSortOption = .created
     @State private var filterOption: InboxFilterOption = .task
+    @State private var showCompleted = false
     @State private var editingDueDateItem: Item?
     @State private var editingDueDate = Date()
 
     private var sortedItems: [Item] {
         switch sortOption {
         case .created:
-            return store.items
+            return store.items.sorted { lhs, rhs in
+                if lhs.isCompleted != rhs.isCompleted {
+                    return !lhs.isCompleted
+                }
+                return lhs.createdAt > rhs.createdAt
+            }
         case .priority:
             return store.items.sorted { lhs, rhs in
+                if lhs.isCompleted != rhs.isCompleted {
+                    return !lhs.isCompleted
+                }
                 if lhs.priority != rhs.priority {
                     return lhs.priority.rawValue > rhs.priority.rawValue
                 }
@@ -71,6 +80,9 @@ struct InboxView: View {
             }
         case .dueDate:
             return store.items.sorted { lhs, rhs in
+                if lhs.isCompleted != rhs.isCompleted {
+                    return !lhs.isCompleted
+                }
                 let lhsDate = lhs.dueDate ?? Date.distantFuture
                 let rhsDate = rhs.dueDate ?? Date.distantFuture
                 if lhsDate != rhsDate {
@@ -82,7 +94,9 @@ struct InboxView: View {
     }
 
     private var filteredItems: [Item] {
-        sortedItems.filter { $0.type == filterOption.itemType }
+        sortedItems.filter {
+            $0.type == filterOption.itemType && (showCompleted || !$0.isCompleted)
+        }
     }
 
     var body: some View {
@@ -101,54 +115,74 @@ struct InboxView: View {
                                 }
                             }
                             .pickerStyle(.segmented)
+
+                            Toggle("Show Completed", isOn: $showCompleted)
                         }
 
                         ForEach(filteredItems) { item in
                             NavigationLink {
                                 ItemDetailView(item: item, store: store)
                             } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title)
-                                        .font(.headline)
-                                    if !item.details.isEmpty {
-                                        Text(item.details)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
+                                HStack(alignment: .top, spacing: 10) {
+                                    Button {
+                                        store.toggleCompletion(id: item.id)
+                                    } label: {
+                                        Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(item.isCompleted ? .green : .secondary)
                                     }
-                                    Text(item.type.rawValue.capitalized)
+                                    .buttonStyle(.plain)
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.title)
+                                            .font(.headline)
+                                            .strikethrough(item.isCompleted)
+                                            .foregroundStyle(item.isCompleted ? .secondary : .primary)
+                                        if !item.details.isEmpty {
+                                            Text(item.details)
+                                                .font(.subheadline)
+                                                .strikethrough(item.isCompleted)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Text(item.type.rawValue.capitalized)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        HStack(spacing: 8) {
+                                            if item.isCompleted {
+                                                Text("Completed")
+                                            }
+                                            Text(item.priority.label)
+                                            if let dueDate = item.dueDate {
+                                                Text("Due \(Item.dueDateDisplay(dueDate))")
+                                            }
+                                            if isExpired(item) {
+                                                Button("Expired") {
+                                                    beginDueDateEdit(for: item)
+                                                }
+                                                .buttonStyle(.bordered)
+                                                .tint(.red)
+                                            }
+                                            if let project = item.project, !project.isEmpty {
+                                                Text(project)
+                                            }
+                                            if !item.tags.isEmpty {
+                                                Text(item.tags.joined(separator: ", "))
+                                                    .lineLimit(1)
+                                            }
+                                        }
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                    HStack(spacing: 8) {
-                                        Text(item.priority.label)
-                                        if let dueDate = item.dueDate {
-                                            Text("Due \(Item.dueDateDisplay(dueDate))")
-                                        }
-                                        if isExpired(item) {
-                                            Button("Expired") {
-                                                beginDueDateEdit(for: item)
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .tint(.red)
-                                        }
-                                        if let project = item.project, !project.isEmpty {
-                                            Text(project)
-                                        }
-                                        if !item.tags.isEmpty {
-                                            Text(item.tags.joined(separator: ", "))
-                                                .lineLimit(1)
-                                        }
                                     }
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
                                 }
                                 .padding(.vertical, 4)
                             }
                         }
                         .onDelete(perform: deleteItems)
                     }
+                    .themedScrollableBackground()
                 }
             }
             .navigationTitle("Inbox")
+            .themedBackground()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -181,7 +215,7 @@ struct InboxView: View {
             }
             // Presents the add form.
             .sheet(isPresented: $isShowingAdd) {
-                AddItemView(store: store)
+                AddItemView(store: store, initialType: filterOption.itemType)
             }
             // Presents the voice capture flow.
             .sheet(isPresented: $isShowingVoiceCapture) {
@@ -249,6 +283,8 @@ private struct DueDateEditSheet: View {
     }
 }
 
-#Preview {
-    InboxView(store: ItemStore())
+struct InboxView_Previews: PreviewProvider {
+    static var previews: some View {
+        InboxView(store: ItemStore())
+    }
 }

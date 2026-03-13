@@ -64,6 +64,8 @@ struct UndoHistoryView: View {
     }
 }
 
-#Preview {
-    UndoHistoryView(store: ItemStore())
+struct UndoHistoryView_Previews: PreviewProvider {
+    static var previews: some View {
+        UndoHistoryView(store: ItemStore())
+    }
 }
