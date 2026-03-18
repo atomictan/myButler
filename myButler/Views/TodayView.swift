@@ -94,13 +94,11 @@ struct TodayView: View {
                             }
                         }
                     }
-                    .themedScrollableBackground()
                 } else {
                     ContentUnavailableView("Nothing due today", systemImage: "sun.max")
                 }
             }
             .navigationTitle("Today")
-            .themedBackground()
         }
     }
 

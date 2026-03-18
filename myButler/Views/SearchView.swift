@@ -73,11 +73,9 @@ struct SearchView: View {
                         }
                         .onDelete(perform: deleteItems)
                     }
-                    .themedScrollableBackground()
                 }
             }
             .navigationTitle("Search")
-            .themedBackground()
         }
         // Search bar that binds to the local query state.
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))

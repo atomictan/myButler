@@ -34,7 +34,6 @@ struct VoiceSessionView: View {
             }
             .padding()
             .navigationTitle("Voice")
-            .themedBackground()
             .onChange(of: voiceSessionUseSpeaker) { _, newValue in
                 viewModel.updateSpeakerRouting(useSpeaker: newValue)
             }

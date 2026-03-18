@@ -46,11 +46,9 @@ struct ProjectsView: View {
                             }
                         }
                     }
-                    .themedScrollableBackground()
                 }
             }
             .navigationTitle("Projects")
-            .themedBackground()
         }
     }
 

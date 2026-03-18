@@ -1,7 +1,7 @@
 import Foundation
 
-final class AppPerformanceLogger {
-    static let shared = AppPerformanceLogger()
+final class AppPerformanceLogger: @unchecked Sendable {
+    nonisolated static let shared = AppPerformanceLogger()
 
     private let queue = DispatchQueue(label: "AppPerformanceLogger")
     private let startedAt = Date()
@@ -16,13 +16,13 @@ final class AppPerformanceLogger {
         }
     }
 
-    func log(_ message: String) {
+    nonisolated func log(_ message: String) {
         queue.async {
             self.appendLine(self.makeLine(message: message))
         }
     }
 
-    func snapshotForSharing(logging message: String) -> URL? {
+    nonisolated func snapshotForSharing(logging message: String) -> URL? {
         queue.sync {
             appendLine(makeLine(message: message))
             guard let fileURL else { return nil }
@@ -41,23 +41,23 @@ final class AppPerformanceLogger {
         }
     }
 
-    func mark(_ name: String, since start: Date) {
+    nonisolated func mark(_ name: String, since start: Date) {
         let duration = Date().timeIntervalSince(start)
         log("\(name) completed in \(String(format: "%.3f", duration))s")
     }
 
-    private func timestamp() -> String {
+    nonisolated private func timestamp() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return formatter.string(from: Date())
     }
 
-    private func makeLine(message: String) -> String {
+    nonisolated private func makeLine(message: String) -> String {
         let elapsed = Date().timeIntervalSince(startedAt)
         return "[\(timestamp()) +\(String(format: "%.3f", elapsed))s] \(message)\n"
     }
 
-    private func appendLine(_ line: String) {
+    nonisolated private func appendLine(_ line: String) {
         guard let fileURL,
               let data = line.data(using: .utf8) else { return }
         if !FileManager.default.fileExists(atPath: fileURL.path) {

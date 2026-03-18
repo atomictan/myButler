@@ -15,6 +15,7 @@
 ## Notes
 - Sandbox/approval rules still apply even if permissions are listed here.
 - AirDrop Debug logs land in `~/Downloads`; When try to analyze debug logs, use `scripts/import-airdrop-logs.sh` to copy all the debug logs into `logs/airdrop` first.
+- After making a code fix for a reported build/compiler issue, always run a local build yourself before asking the user to run/verify it.
 - When checking debug logs, pay attention to following things:
 	- whether the diff proposal makes sense or not, including both title and due date/time,  with regard to the transcript
 	- performance in app-performance.log make sense or not

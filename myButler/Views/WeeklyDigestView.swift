@@ -73,7 +73,6 @@ struct WeeklyDigestView: View {
                 }
             }
         }
-        .themedScrollableBackground()
         .navigationTitle("Weekly Digest")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {

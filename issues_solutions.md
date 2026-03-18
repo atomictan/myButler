@@ -1,7 +1,13 @@
 # Voice Session Issues & Solutions
 
+- **Issue (2026-03-18):** Local CLI build validation for this round could not complete because `xcodebuild` asset compilation requires simulator runtime services that are unavailable inside the current sandbox (`No available simulator runtimes for platform iphonesimulator`).
+  - **Solution:** Keep using a repo-local derived-data path for quick compile checks, but treat this specific failure as environment-related and re-run validation from full Xcode / an unsandboxed environment when simulator-backed asset compilation is required.
+- **Issue (2026-03-13):** After code fixes, asking the user to run the app before I run a local build creates avoidable back-and-forth and can miss compile errors that I should catch first.
+  - **Solution:** Added an agent workflow rule in `AGENTS.md` to always run a local build after fixing a reported compiler/build issue before asking the user to verify it.
+- **Issue (2026-03-13):** Swift 6 actor isolation flagged `AppPerformanceLogger.shared.log(...)` inside `Task.detached` with `Expression is 'async' but is not marked with 'await'` because the logger inherited the project’s default main-actor isolation.
+  - **Solution:** Marked `AppPerformanceLogger` as `@unchecked Sendable`, made `shared` explicitly `nonisolated`, and kept the logging helpers `nonisolated` so detached/background tasks can write performance markers without bouncing through `MainActor`. This fixes both the earlier async-access complaint and the later `Main actor-isolated static property 'shared'` error under Swift 6.
 - **Issue (2026-03-13):** The in-app UI colors felt too plain and did not match the new playful pink dino branding.
-  - **Solution:** Added an app-wide UI theme setting in Settings with selectable accent colors, including a pink theme, and applied the selected tint across the app. Extended the theme with a very light background gradient wash on the main screens so the UI feels warmer without hurting readability.
+  - **Solution:** Added an app-wide UI theme setting in Settings with selectable accent colors, including a pink theme, and applied the selected tint across the app. After on-device review, removed the experimental background wash and kept the theme focused on controls/highlights only because the tinted background looked worse, especially in dark mode.
 - **Issue (2026-03-12):** The app icon looked too plain and did not match the product’s more playful personality.
   - **Solution:** Replaced the default/plain icon with a custom cute pink dino icon set, including light, dark, and tinted variants in the app asset catalog.
 - **Issue (2026-03-12):** Typed entry still routes through AI `structuring` and `proposal` even when the user already chose an explicit destination tab like `To Do`, `Ideas`, or `Notes`, which adds unnecessary friction and weakens trust in direct entry.

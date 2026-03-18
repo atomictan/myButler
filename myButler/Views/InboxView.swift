@@ -178,11 +178,9 @@ struct InboxView: View {
                         }
                         .onDelete(perform: deleteItems)
                     }
-                    .themedScrollableBackground()
                 }
             }
             .navigationTitle("Inbox")
-            .themedBackground()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

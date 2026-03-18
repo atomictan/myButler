@@ -281,7 +281,6 @@ struct SettingsView: View {
     private var baseSettingsView: AnyView {
         AnyView(
             settingsForm
-                .themedScrollableBackground()
                 .navigationTitle("Settings")
                 .onChange(of: weeklyDigestRemindersEnabled) { _, newValue in
                     Task {

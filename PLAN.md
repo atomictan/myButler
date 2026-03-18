@@ -134,7 +134,8 @@ M10 — Voice session polish + workflow (diff-at-end review)
 - Replaced the plain app icon with a custom cute pink dino icon set.
 - Added light, dark, and tinted `1024x1024` icon assets in `myButler/Assets.xcassets/AppIcon.appiconset`.
 - Added a selectable UI color theme in Settings, with `Pink` included as one of the app-wide accent options.
-- Extended the selected theme with a soft background wash across the main screens so the app feels more branded without becoming overly saturated.
+- Reverted the experimental background wash after on-device review; theme selection now stays control-focused (buttons, toggles, selected tabs, highlights) for a cleaner day/night appearance.
+- Fixed a Swift 6 actor-isolation build error by making `AppPerformanceLogger` explicitly nonisolated/`Sendable`, so detached tasks can log performance markers without extra `await` noise.
 
 ## Definition of Done (M5)
 - Transcript/text sends prompt to structuring service
