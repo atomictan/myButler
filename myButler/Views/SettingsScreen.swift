@@ -11,6 +11,7 @@ struct SettingsScreen: View {
     @AppStorage("doubaoDiffModel") private var doubaoDiffModel = "doubao-seed-2-0-mini-260215"
     @AppStorage("weeklyDigestRemindersEnabled") private var weeklyDigestRemindersEnabled = true
     @AppStorage("doubaoRealtimeAppId") private var doubaoRealtimeAppId = ""
+    @AppStorage("doubaoRealtimeAppKey") private var doubaoRealtimeAppKey = ""
     @AppStorage("doubaoRealtimeAccessKey") private var doubaoRealtimeAccessKey = ""
     @AppStorage("voiceSessionASRSource") private var voiceSessionASRSource = "doubao"
     @AppStorage("voiceSessionUseSpeaker") private var voiceSessionUseSpeaker = true
@@ -69,6 +70,7 @@ struct SettingsScreen: View {
             )
             DoubaoRealtimeSection(
                 doubaoRealtimeAppId: $doubaoRealtimeAppId,
+                doubaoRealtimeAppKey: $doubaoRealtimeAppKey,
                 doubaoRealtimeAccessKey: $doubaoRealtimeAccessKey
             )
         }
@@ -539,11 +541,15 @@ private struct DoubaoSection: View {
 
 private struct DoubaoRealtimeSection: View {
     @Binding var doubaoRealtimeAppId: String
+    @Binding var doubaoRealtimeAppKey: String
     @Binding var doubaoRealtimeAccessKey: String
 
     var body: some View {
         Section("Doubao Realtime") {
             TextField("App ID", text: $doubaoRealtimeAppId)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("App Key", text: $doubaoRealtimeAppKey)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             SecureField("Access Key", text: $doubaoRealtimeAccessKey)

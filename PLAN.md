@@ -113,6 +113,12 @@ One unified object with a type:
 ## Current Milestone
 M10 — Voice session polish + workflow (diff-at-end review)
 
+## Public Readiness (2026-09-01)
+- Current tree cleanup completed: credential CSVs, local Doubao experiments, generated caches/audio files, and Xcode user-local files are removed.
+- Added `.gitignore` coverage for local credentials, build output, logs, editor swap files, Python caches, and Xcode user state.
+- Moved the Doubao realtime App Key out of source code and into Settings.
+- Local reachable Git history was rewritten and rescanned with no credential-pattern matches; the exposed Doubao access key pair should still be rotated before making the repo public.
+
 ## Product Direction (2026-03-12)
 - Treat typed tab entry as explicit user intent: if the user enters from `To Do`, `Ideas`, or `Notes`, save directly into that type.
 - Remove mandatory pre-save `structuring` / `proposal` for typed tab entry.
@@ -139,7 +145,7 @@ M10 — Voice session polish + workflow (diff-at-end review)
 - 2026-08-31: Refined the app icon from `docs/Icon/reference_image.jpg` to more closely match the uploaded sticker reference: side-facing pink dino, oversized head, cream belly patch, right-side back plates, cream sticker edge, and full-bleed pink icon background.
 - Replaced the light, dark, and tinted `1024x1024` app icon PNGs with the new artwork.
 - Local asset dimensions validate at `1024x1024`; sandbox `xcodebuild` reaches asset compilation but still cannot complete because `actool` reports no available simulator runtimes in this environment.
-- Unsandboxed generic iPhone build succeeds with the new icon; installing to `Junhua’s iPhone` is currently blocked until the device is paired/trusted in Xcode.
+- Unsandboxed generic iPhone build succeeds with the new icon; installing to a connected iPhone is currently blocked until the device is paired/trusted in Xcode.
 
 ## Definition of Done (M5)
 - Transcript/text sends prompt to structuring service

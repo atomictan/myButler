@@ -1,0 +1,33 @@
+# Local credentials and environment
+.env
+.env.*
+!.env.example
+passkeys/
+*secret*
+*credentials*
+*api_key*
+*apikey*
+
+# Build output
+.build/
+DerivedData/
+build/
+
+# Xcode user-local state
+xcuserdata/
+*.xcuserstate
+
+# macOS/editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# App/debug exports
+logs/
+*.log
+voice-*.json
+app-performance*.log

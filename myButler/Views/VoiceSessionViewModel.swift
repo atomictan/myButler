@@ -1911,9 +1911,10 @@ final class VoiceSessionViewModel: ObservableObject {
         let defaults = UserDefaults.standard
         let appId = defaults.string(forKey: "doubaoRealtimeAppId")?.trimmingCharacters(in: .whitespacesAndNewlines)
         let accessKey = defaults.string(forKey: "doubaoRealtimeAccessKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let appKey = defaults.string(forKey: "doubaoRealtimeAppKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let appId, !appId.isEmpty, let accessKey, !accessKey.isEmpty else {
-            throw NSError(domain: "VoiceSession", code: 1, userInfo: [NSLocalizedDescriptionKey: "Set Doubao realtime App ID and Access Key in Settings."])
+        guard let appId, !appId.isEmpty, let accessKey, !accessKey.isEmpty, let appKey, !appKey.isEmpty else {
+            throw NSError(domain: "VoiceSession", code: 1, userInfo: [NSLocalizedDescriptionKey: "Set Doubao realtime App ID, App Key, and Access Key in Settings."])
         }
 
         let connectConfig = DoubaoRealtimeConfig(
@@ -1922,7 +1923,7 @@ final class VoiceSessionViewModel: ObservableObject {
                 "X-Api-App-ID": appId,
                 "X-Api-Access-Key": accessKey,
                 "X-Api-Resource-Id": "volc.speech.dialog",
-                "X-Api-App-Key": "DOUBAO_REALTIME_APP_KEY",
+                "X-Api-App-Key": appKey,
                 "X-Api-Connect-Id": UUID().uuidString
             ]
         )
