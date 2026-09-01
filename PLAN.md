@@ -136,6 +136,10 @@ M10 — Voice session polish + workflow (diff-at-end review)
 - Added a selectable UI color theme in Settings, with `Pink` included as one of the app-wide accent options.
 - Reverted the experimental background wash after on-device review; theme selection now stays control-focused (buttons, toggles, selected tabs, highlights) for a cleaner day/night appearance.
 - Fixed a Swift 6 actor-isolation build error by making `AppPerformanceLogger` explicitly nonisolated/`Sendable`, so detached tasks can log performance markers without extra `await` noise.
+- 2026-08-31: Refined the app icon from `docs/Icon/reference_image.jpg` to more closely match the uploaded sticker reference: side-facing pink dino, oversized head, cream belly patch, right-side back plates, cream sticker edge, and full-bleed pink icon background.
+- Replaced the light, dark, and tinted `1024x1024` app icon PNGs with the new artwork.
+- Local asset dimensions validate at `1024x1024`; sandbox `xcodebuild` reaches asset compilation but still cannot complete because `actool` reports no available simulator runtimes in this environment.
+- Unsandboxed generic iPhone build succeeds with the new icon; installing to `Junhua’s iPhone` is currently blocked until the device is paired/trusted in Xcode.
 
 ## Definition of Done (M5)
 - Transcript/text sends prompt to structuring service

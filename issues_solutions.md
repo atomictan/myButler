@@ -1,5 +1,11 @@
 # Voice Session Issues & Solutions
 
+- **Issue (2026-08-31):** App icon needed to better match the uploaded cute dino sticker reference, with a side-facing pink dinosaur, cream belly patch, right-side back plates, and sticker-cutout feel.
+  - **Solution:** Generated a new full-bleed square icon from `docs/Icon/reference_image.jpg`, resized it to `1024x1024`, and replaced `AppIcon.png`, `AppIcon-dark.png`, and `AppIcon-tinted.png` in `myButler/Assets.xcassets/AppIcon.appiconset`.
+- **Issue (2026-08-31):** Local build validation after the icon update still cannot complete in this sandbox because `actool` depends on unavailable CoreSimulator runtime services and reports `No available simulator runtimes for platform iphonesimulator`.
+  - **Solution:** Confirmed the icon files are valid `1024x1024` PNGs and the failure is environmental; re-run from full Xcode or an unsandboxed environment for final asset-catalog validation.
+- **Issue (2026-08-31):** Installing the updated icon build to `Junhua’s iPhone` from the CLI is blocked because Xcode reports the device is unpaired.
+  - **Solution:** Opened `myButler.xcodeproj` in Xcode and verified an unsandboxed generic iPhone build succeeds; pair/trust the iPhone in Xcode's Devices window, then run the `myButler` scheme on that device to install the updated app.
 - **Issue (2026-03-18):** Local CLI build validation for this round could not complete because `xcodebuild` asset compilation requires simulator runtime services that are unavailable inside the current sandbox (`No available simulator runtimes for platform iphonesimulator`).
   - **Solution:** Keep using a repo-local derived-data path for quick compile checks, but treat this specific failure as environment-related and re-run validation from full Xcode / an unsandboxed environment when simulator-backed asset compilation is required.
 - **Issue (2026-03-13):** After code fixes, asking the user to run the app before I run a local build creates avoidable back-and-forth and can miss compile errors that I should catch first.
